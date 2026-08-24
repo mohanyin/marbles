@@ -51,7 +51,7 @@ Marbles is that glanceable HUD.
 
 1. Keep every live local agent visible above other apps at all times.
 2. Make identity instant: you should recognize “the orange silk one” without reading a label.
-3. Make status glanceable at 72×72: working, thinking, tool-in-flight, waiting, finished, error.
+3. Make status glanceable at 36×36: working, thinking, tool-in-flight, waiting, finished, error.
 4. Get from “I see the marble” to “I’m in that agent’s surface” in one or two clicks.
 5. Stay out of the way. Cluster mode is a small corner ornament, not a dashboard.
 6. Install in under five minutes, including wiring Claude Code hooks.
@@ -100,11 +100,11 @@ Marbles is that glanceable HUD.
 
 Agents appear as a packed **isometric 3×3×3 lattice** — a small cube of spheres on the desktop. This is the idle, always-on posture.
 
-- Each marble is **at most 72×72 CSS/pt pixels** in this mode (Retina: 144×144 backing pixels is fine; the hit target and layout size stay ≤72pt).
+- Each marble is **36×36 pt** in this mode (Retina: 72×72 backing pixels). That is a hard layout cap, not a suggestion.
 - The whole cluster should read as one object, similar to a pile of marbles in a tray, not a spreadsheet of icons.
 - Occupied slots only. Empty lattice positions are not drawn.
 - **Sticky slots:** `session_id` maps to a lattice index for the life of that marble (including the 30–60s SessionEnd linger). Removing an agent must not shift the others. Vacated indices are reused by the next new agent.
-- Capacity: **27 lattice slots**. If more than 27 agents are live (linger counts), show **26 identity marbles + one `+N` overflow marble** in a lattice slot. Evict the non-focused agent with the oldest `lastEventAt` (not spatial “furthest”). The overflow marble is not a seeded identity. Clicking it enters Active with the full scrollable list.
+- Capacity: **27 lattice slots**. If more than 27 agents are live (linger counts), show **26 identity marbles + one `+N` overflow marble** in the **rightmost slot of the front / top lattice layer** (`x:2, y:0, z:0`). Evict the non-focused agent with the oldest `lastEventAt` (not spatial “furthest”), and keep that overflow slot free of an identity marble. The overflow marble is not a seeded identity. Clicking it enters Active with the full scrollable list.
 - Clicking a **marble, chip, or the overflow marble** enters Active mode. Gaps between spheres click through to the desktop. “The cluster” means the union of those circles, not the bounding box.
 - The cluster is the snap-friendly form: it docks to corners and edge midpoints (see §7).
 
@@ -117,7 +117,7 @@ The lattice unfolds into a **single line** so you can target one agent.
 - Click a marble to enter Focus for that agent.
 - Click empty desktop / press `Esc` to collapse back to Cluster.
 - Layout **adapts to snap position** (see §7.2).
-- Marbles may grow slightly (up to ~88pt) so they are easier to hit, but they should still feel like the same objects.
+- Marbles grow to **60×60 pt** so they are easier to hit, but they should still feel like the same objects.
 - Hovering a marble previews the current tool icon + a one-line status without entering Focus. No permanent project-name captions under Cluster/Active marbles.
 
 ### 6.3 Focus
@@ -170,9 +170,8 @@ Cluster mode snaps to **eight points** on the current display:
 Behavior:
 
 - Drag anywhere on the cluster (not just a chrome handle).
-- Release near a snap target → magnetic snap (threshold ~48pt).
-- Release elsewhere → stay where dropped (free position), but Active-mode orientation still uses the *nearest* edge/corner (see below).
-- Persist snap (or free position) per display. Multi-monitor: the cluster lives on the display it was last dropped on.
+- Release always locks to the **nearest of the eight targets**. There is no free-place rest position.
+- Persist the snap point per display. Multi-monitor: the cluster lives on the display it was last dropped on.
 - Avoid the menu bar, Notch, Dock, and Stage Manager strip. Snap points inset by safe-area padding (~12pt).
 
 ### 7.2 Active-mode orientation
@@ -224,7 +223,7 @@ Every marble is a **glass shell + interior volume + lighting**:
 | Glow | Subtle colored bleed into the desktop so the marble lifts off whatever is behind it. |
 | Contact | Optional soft ground shadow / occlusion so a pile of marbles feels stacked, not composited stamps. |
 
-Photorealistic *enough*: convincing at 72pt on a Retina display. Not offline path-traced. A real-time Metal (or SceneKit / custom shader) path is expected.
+Photorealistic *enough*: convincing at 36pt on a Retina display. Not offline path-traced. A real-time Metal (or SceneKit / custom shader) path is expected.
 
 ### 8.3 Identity — procedural generation
 
@@ -257,11 +256,11 @@ The reference is on black. Real desktops are light docs, busy Figma files, and w
 
 | Mode | Marble size | Notes |
 | --- | --- | --- |
-| Cluster | ≤72×72 pt | Hard cap |
-| Active | 72–88 pt | Same asset, slightly larger hit target |
-| Focus | 96–120 pt | Hero marble in the popover |
+| Cluster | **36×36 pt** | Hard cap |
+| Active | **60×60 pt** | Same asset, larger hit target |
+| Focus | **72×72 pt** | Hero marble in the popover |
 
-Shaders must look good at all three sizes. Avoid features that vanish at 72pt (hairline cracks, 2pt text inside the sphere).
+Shaders must look good at all three sizes. Avoid features that vanish at 36pt (hairline cracks, 2pt text inside the sphere).
 
 ---
 
@@ -290,7 +289,7 @@ When a new turn starts, motion resumes from the frozen pose — do not randomize
 3. A settled “done” rest state: slightly brighter rim or a small resolved check chip that remains until the next turn or until dismissed.
 4. Optional OS notification and/or a very short tactile sound, off by default or following macOS notification settings.
 
-The completion signal must be visible when the cluster is 72pt in a corner. If you cannot see “done” without entering Active, it failed.
+The completion signal must be visible when the cluster is 36pt in a corner. If you cannot see “done” without entering Active, it failed.
 
 If several agents finish in a short window, stagger the blooms so the cluster does not strobe.
 
@@ -325,7 +324,7 @@ MCP tools fall back to a generic plug/spark icon plus a one-letter or truncated 
 
 In Cluster, show **one** live chip (current tool or thinking). In Active, show the live chip plus a short trail. In Focus, show a compact recent-activity row.
 
-Chips must stay legible at 72pt: ~12–16pt marks sitting on the rim, not icons dropped into the interior where the silk texture will hide them.
+Chips must stay legible at 36pt: ~8–10pt marks sitting on the rim, not icons dropped into the interior where the silk texture will hide them.
 
 ### 9.4 Needs-you state
 
@@ -519,7 +518,7 @@ Qualitative (v1 is a personal / small-audience tool):
 
 ### M2 — Material
 
-- Procedural frosted-marble renderer at reference quality (72pt).
+- Procedural frosted-marble renderer at reference quality (36pt cluster, 60pt Active).
 - Stable seeds, ≥6 interior families, light/dark desktop legibility.
 
 ### M3 — Jump-in
@@ -580,7 +579,7 @@ What not to steal:
 
 - A black rectangular backdrop. Marbles float on the real desktop.
 - Using interior family as a status color language. Error is a **red hue filter** over the existing marble, not a different species.
-- So much micro-detail that 72pt reads as noise.
+- So much micro-detail that 36pt reads as noise.
 
 ---
 

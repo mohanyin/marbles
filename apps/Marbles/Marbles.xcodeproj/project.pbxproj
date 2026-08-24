@@ -11,8 +11,14 @@
 		A10000000000000000000002 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* StatusItemController.swift */; };
 		A10000000000000000000003 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* PreferencesView.swift */; };
 		A10000000000000000000004 /* OverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* OverlayPanel.swift */; };
-		A10000000000000000000005 /* OverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* OverlayView.swift */; };
+		A10000000000000000000005 /* OverlayRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* OverlayRootView.swift */; };
 		A10000000000000000000006 /* OverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* OverlayController.swift */; };
+		A10000000000000000000007 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* Models.swift */; };
+		A10000000000000000000008 /* AgentRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* AgentRoster.swift */; };
+		A10000000000000000000009 /* ModeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* ModeController.swift */; };
+		A1000000000000000000000A /* SnapGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* SnapGeometry.swift */; };
+		A1000000000000000000000B /* LayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* LayoutEngine.swift */; };
+		A1000000000000000000000C /* PlaceholderMarbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* PlaceholderMarbleView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,8 +26,14 @@
 		A20000000000000000000002 /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* OverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPanel.swift; sourceTree = "<group>"; };
-		A20000000000000000000005 /* OverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayView.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* OverlayRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayRootView.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* OverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayController.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* AgentRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoster.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* ModeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeController.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* SnapGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapGeometry.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* LayoutEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngine.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* PlaceholderMarbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderMarbleView.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* Marbles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Marbles.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Marbles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marbles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -50,6 +62,9 @@
 			isa = PBXGroup;
 			children = (
 				A40000000000000000000003 /* App */,
+				A40000000000000000000006 /* Agents */,
+				A40000000000000000000007 /* Mode */,
+				A40000000000000000000008 /* Layout */,
 				A40000000000000000000004 /* Overlay */,
 			);
 			path = Sources;
@@ -69,10 +84,37 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000004 /* OverlayPanel.swift */,
-				A20000000000000000000005 /* OverlayView.swift */,
+				A20000000000000000000005 /* OverlayRootView.swift */,
 				A20000000000000000000006 /* OverlayController.swift */,
+				A20000000000000000000015 /* PlaceholderMarbleView.swift */,
 			);
 			path = Overlay;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000006 /* Agents */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000010 /* Models.swift */,
+				A20000000000000000000011 /* AgentRoster.swift */,
+			);
+			path = Agents;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000007 /* Mode */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000012 /* ModeController.swift */,
+			);
+			path = Mode;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000008 /* Layout */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000013 /* SnapGeometry.swift */,
+				A20000000000000000000014 /* LayoutEngine.swift */,
+			);
+			path = Layout;
 			sourceTree = "<group>";
 		};
 		A40000000000000000000005 /* Products */ = {
@@ -155,8 +197,14 @@
 				A10000000000000000000002 /* StatusItemController.swift in Sources */,
 				A10000000000000000000003 /* PreferencesView.swift in Sources */,
 				A10000000000000000000004 /* OverlayPanel.swift in Sources */,
-				A10000000000000000000005 /* OverlayView.swift in Sources */,
+				A10000000000000000000005 /* OverlayRootView.swift in Sources */,
 				A10000000000000000000006 /* OverlayController.swift in Sources */,
+				A10000000000000000000007 /* Models.swift in Sources */,
+				A10000000000000000000008 /* AgentRoster.swift in Sources */,
+				A10000000000000000000009 /* ModeController.swift in Sources */,
+				A1000000000000000000000A /* SnapGeometry.swift in Sources */,
+				A1000000000000000000000B /* LayoutEngine.swift in Sources */,
+				A1000000000000000000000C /* PlaceholderMarbleView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

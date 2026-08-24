@@ -40,15 +40,10 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
+xcrun swiftc -parse-as-library -O -DDEBUG -sdk "$SDK" -target "$TARGET" \
   -framework AppKit -framework SwiftUI \
   -o "$OUT/Contents/MacOS/Marbles" \
-  "$SRC/App/MarblesApp.swift" \
-  "$SRC/App/StatusItemController.swift" \
-  "$SRC/App/PreferencesView.swift" \
-  "$SRC/Overlay/OverlayPanel.swift" \
-  "$SRC/Overlay/OverlayView.swift" \
-  "$SRC/Overlay/OverlayController.swift"
+  $(find "$SRC" -name '*.swift' | sort)
 
 pkill -x Marbles 2>/dev/null || true
 open "$OUT"

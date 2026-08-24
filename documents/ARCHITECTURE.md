@@ -52,7 +52,7 @@ Do **not** introduce Electron, a browser dashboard, a cloud backend, accounts, o
 
 ## 3. Invariants (do not violate)
 
-1. Cluster marble layout size ≤ **72×72 pt**. Backing store may be 2×/3×.
+1. Cluster marble layout size = **36×36 pt**. Backing store may be 2×/3×.
 2. Transparent pixels **click through**. The cluster must not own a large invisible rect.
 3. Overlay stays above other apps and joins all Spaces (`fullScreenAuxiliary` where possible).
 4. One **parent session** = one marble. Subagents are chips or satellites only. v1 never promotes a subagent to its own marble.
@@ -222,7 +222,7 @@ enum OverlayMode: Equatable {
 
 Rules:
 
-- Cluster hit = union of marble circles + chip circles + overflow circle. Gaps pass through. Bloom-ring pixels outside the 72pt circle do **not** hit.
+- Cluster hit = union of marble circles + chip circles + overflow circle. Gaps pass through. Bloom-ring pixels outside the 36pt circle do **not** hit.
 - Cluster click → `.active` (do not skip to Focus in v1).
 - Fast Cluster → marble click must **interrupt** the unpack and land on `.focus`. Other marbles snap to their Active targets, then the non-hero dim (see §10.3 `dim`).
 - `Esc` is handled at the panel. Focus `Esc` → Active. Active `Esc` → Cluster.
@@ -235,14 +235,14 @@ Rules:
 **Snap targets (current display):**
 
 - 4 corners + 4 edge midpoints.
-- Magnetic snap if release is within **48pt** of a target; else `.free`.
+- Release **always** snaps to the nearest of the 8 targets. `.free` is transient during an in-progress drag only — Cluster never rests off a snap point.
 - Inset: `max(12, screen.auxiliaryTopLeftArea / safeArea)` plus Dock/Stage Manager visible frames. Do not hard-code 24pt.
 
-**Persistence:** `SnapState` keyed by **`NSScreen.deviceDescription["NSScreenNumber"]` as UInt32** (stable enough; on miss, fall back to frame-size hash). Value is `.snap(SnapPoint)` or `.free(CGPoint)` in **that display’s local points** (origin bottom-left, unscaled).
+**Persistence:** `SnapState` keyed by **`NSScreen.deviceDescription["NSScreenNumber"]` as UInt32** (stable enough; on miss, fall back to frame-size hash). Persisted value is always `.snap(SnapPoint)`.
 
-On unplug: if the stored display is gone, move the cluster to the **main** screen’s nearest equivalent snap (same `SnapPoint`, or `.bottomRight` if it was `.free`).
+On unplug: if the stored display is gone, move the cluster to the **main** screen’s same `SnapPoint`, or `.bottomRight` if missing.
 
-**Active orientation** (from snap point, or nearest edge if free-placed):
+**Active orientation** (from the locked snap point):
 
 | Position | Line axis | Growth |
 | --- | --- | --- |
@@ -253,8 +253,6 @@ On unplug: if the stored display is gone, move the cluster to the **main** scree
 | Any corner | **vertical** | inward along the nearest vertical edge |
 
 Active overflow: **scroll along the line axis** (scroll-wheel / two-finger / drag on the line). No second rank in v1. Never clip without a way to reach every marble.
-
-**Nearest edge** for free-place: the edge (not corner) whose infinite line is closest to the cluster origin; ties break top > bottom > left > right. Then apply the table. If the origin is within 48pt of a corner, treat as that **corner** (vertical).
 
 **Focus popover** opens toward screen interior, ≤360pt wide, never over the Notch.
 
@@ -355,7 +353,7 @@ struct OverflowToken: Equatable {
 
 **Idle discovery cap:** at most **5** `discovery` agents, and only if mtime < **2 hours** *and* a matching `claude` PID exists. JSONL-only ghosts without a PID are not shown (prevents a 24h flood). Discovery never overwrites a hooked agent.
 
-**Overflow:** if `agents.filter({ !$0.isDemo }).count > 27`, Cluster shows **26 sticky identity marbles + `OverflowToken`**. Evict from the Cluster *view* (do not delete) the non-focused agent with oldest `lastEventAt` that is not in Focus. Linger agents count. Overflow click → Active with the **full** list, same sticky order, scrollable.
+**Overflow:** if `agents.filter({ !$0.isDemo }).count > 27`, Cluster shows **26 sticky identity marbles + `OverflowToken`**. The token occupies lattice index **2** (`x:2, y:0, z:0`) — the rightmost cell on the front / top layer — not a side-floating badge. Evict from the Cluster *view* (do not delete) the occupant of that slot plus the non-focused agent(s) with oldest `lastEventAt` until 26 remain. Linger agents count. Overflow click → Active with the **full** list, same sticky order, scrollable.
 
 **Slot assignment:** `latticeIndex` is assigned once: the lowest free index in `0...26` using traversal **front face first, then depth** — `(z, y, x)` with z=0 nearest the user. Do not sort-and-repack. `Identity.seed` = FNV-1a 64 of `session_id` UTF-8; persist as **hex string** in `seeds.json`. If `session_id` is missing, id = `"disc-" + hex(FNV(cwd + startedAt ISO8601))`.
 
@@ -368,7 +366,7 @@ struct OverflowToken: Equatable {
 ```swift
 struct MarbleFrame {
   var center: CGPoint               // panel coords
-  var size: CGFloat                 // 72 cluster / 72–88 active / 96–120 focus hero
+  var size: CGFloat                 // 36 cluster / 60 active / 72 focus hero
   var z: Int                        // isometric depth
   var dim: CGFloat                  // 0...1, 0.45 for non-hero in Focus
 }
@@ -385,13 +383,13 @@ screenX = origin.x + (x - y) * spacingX
 screenY = origin.y + (x + y) * spacingY - z * spacingZ
 ```
 
-Starting values (tune, then lock in tests): `spacingX = 40`, `spacingY = 34`, `spacingZ = 28` so 72pt spheres overlap. Cluster AABB must stay ≤ 240×220 pt for a full 26+N pile.
+Starting values (tune, then lock in tests): `spacingX = 20`, `spacingY = 17`, `spacingZ = 14` so 36pt spheres overlap. Cluster AABB must stay ≤ 140×130 pt for a full 26+N pile.
 
 **Slot assignment:** use `Agent.latticeIndex` from §8. Do **not** re-pack by status or by sorting ids.
 
 ### 9.2 Active line
 
-Place visible agents by ascending `latticeIndex` (then hidden/overflowed agents after, for the full list). Size 72–88pt. **No** permanent captions. Hover (Active only): chip + one-line status using the Focus copy table (§12.1).
+Place visible agents by ascending `latticeIndex` (then hidden/overflowed agents after, for the full list). Size **60pt**. **No** permanent captions. Hover (Active only): chip + one-line status using the Focus copy table (§12.1).
 
 ### 9.3 Hit testing
 
@@ -405,7 +403,7 @@ Drag vs click: movement ≥ **4pt** before mouse-up is a drag.
 
 ### 10.1 Why Metal
 
-Reference quality at 72pt needs a glass shell, frost, interior volume, specular, and a cheap post hue shift. One `MTKView` (or a single view with instanced draws) is enough for ≤27 spheres.
+Reference quality at 36pt needs a glass shell, frost, interior volume, specular, and a cheap post hue shift. One `MTKView` (or a single view with instanced draws) is enough for ≤27 spheres.
 
 SceneKit is an acceptable prototype in M0–M1 **only if** the uniform contract below is preserved so M2 can swap the renderer.
 
@@ -459,7 +457,7 @@ struct MarbleFrameUniforms {
 
 **Completion:** one look — **caustic sweep**. Stagger 80–120ms; cap **4** concurrent blooms, queue the rest. Settled rest = `rimBoost` + check chip until next `UserPromptSubmit` (no manual dismiss for the check).
 
-**Metal lifetime:** one `MTKView`, instanced draws, device/queue/pipelines owned by Render. Pause display link when overlay is hidden **or** every marble has `advection==0 && bloom==0 && attention==0 && errorHue` is settled. Color space display-P3. Same shader at 72 / 88 / 120pt; no extra landscape micro-detail below 88pt.
+**Metal lifetime:** one `MTKView`, instanced draws, device/queue/pipelines owned by Render. Pause display link when overlay is hidden **or** every marble has `advection==0 && bloom==0 && attention==0 && errorHue` is settled. Color space display-P3. Same shader at 36 / 60 / 72pt; no extra landscape micro-detail below 60pt.
 
 **Desktop bleed:** optional faint backdrop blur *behind* the cluster (private API-free: a small `NSVisualEffectView` clipped to a rounded union, very low material). Never a black plate.
 
@@ -494,7 +492,7 @@ Map via `Chips.symbol(for:)`:
 
 Chip sits on the **lower-right rim** in screen space (does not orbit). Satellites (if pref on): up to 3 dots, 8pt, 14pt outside the rim, inherit parent identity hue, no extra motion when reduced-motion.
 
-Chip size ~12–16pt on the rim. Thinking glyph ≠ tool glyph.
+Chip size ~8–10pt on the rim at cluster scale. Thinking glyph ≠ tool glyph.
 
 ---
 
@@ -738,7 +736,7 @@ Until notarized: README step “Open anyway” (right-click) — still part of t
 
 | Layer | What |
 | --- | --- |
-| `LayoutTests` | 8 snap orientations; corner → vertical; 72pt cap; sticky slots; 27 vs 28 overflow; linger counts |
+| `LayoutTests` | 8 snap orientations; corner → vertical; 36pt cluster / 60pt Active; sticky slots; 27 vs 28 overflow; linger counts. Run `./scripts/test.sh`. |
 | `StatusTests` | reducer table in §8; error vs finished vs waiting vs PostToolUseFailure |
 | `IdentityTests` | same seed ⇒ same params; family table over 100 seeds |
 | `HookContractTests` | helper exits 0 on refused connection and bad JSON; fixtures decode |
@@ -779,8 +777,8 @@ Founder look-path after every stream (put this in the PR description):
 | **W0** | Overlay panel + click-through | Empty floating panel, menu bar, pass-through hits | — | A small empty panel over Safari/Slack. Clicks on empty glass hit the app beneath. Drag the panel. Menu bar extra works. |
 | **W1** | Mode + Layout + snap | Dummy 3 agents; Cluster/Active/Focus; 8 snap points | W0 | Placeholders in a pile. Click pile → line. Click one → Focus card (can be ugly). Drag to all 8 snaps; corners expand **vertical**. Gaps click through. |
 | **W2** | AgentStore + Ingest + helper | Fake + live events update status | W0 | Debug inject changes status. `curl` a fixture at `:17832/hook` updates a marble. Optional: install hooks and run a real Claude **or** Cursor Agent turn and watch a marble appear. |
-| **W3** | Chips + motion + bloom + error hue | Works against dummy *or* live store | W1, W2 | Working swirls (even with placeholder spheres). Finished freezes + caustic sweep. Error goes **red** without cracks. Thinking vs tool chips readable at 72pt. |
-| **W4** | Metal + Identity | Reference look at 72pt | W1 | Six families vs [the still](references/marble-visual-reference.png). Same marble on a white Google Doc **and** a dark desktop. Debug cycle seeds. No black plate. |
+| **W3** | Chips + motion + bloom + error hue | Works against dummy *or* live store | W1, W2 | Working swirls (even with placeholder spheres). Finished freezes + caustic sweep. Error goes **red** without cracks. Thinking vs tool chips readable at 36pt. |
+| **W4** | Metal + Identity | Reference look at 36pt | W1 | Six families vs [the still](references/marble-visual-reference.png). Same marble on a white Google Doc **and** a dark desktop. Debug cycle seeds. No black plate. |
 | **W5** | Focus popover + preview | Actions disabled until W6 | W1, W2 | Preview copy order (waiting / tool / text). Click hero to leave. Click another marble to switch. Card stays on-screen at every snap. |
 | **W6** | Jump-in adapters | Claude Code / Cursor / Terminal / Conductor | W5 | Each visible button opens the right **app**. Cursor-sourced marbles show Open Cursor, not Claude Code. |
 | **W7** | Hook installer + demo + prefs | Repair / undo both configs | W2 | First-run checklist. Demo marble if empty. Confirm `~/.claude/settings.json` **and** `~/.cursor/hooks.json` contain `marbles-hook`. Undo removes only ours. Reduced motion snaps. |
@@ -812,7 +810,7 @@ Suggested pairing: **W0→W1** and **W0→W2** in parallel after the panel exist
 | Error art | Red hue filter, no bloom | Keep identity; no fractures |
 | Subagents | Chips / satellites only | Protect 3×3×3 |
 | Lattice | Sticky index, packed isometric | Same marble stays put |
-| Overflow | 26 + `+N`; evict oldest `lastEventAt` | 27 slots, one used by overflow |
+| Overflow | 26 + `+N` in lattice slot `(2,0,0)`; evict oldest `lastEventAt` | 27 slots, one used by overflow |
 | Freeze time | Hold last `animationTime` | Resume from pose |
 | Waiting | `hold=1`, not `freeze` | Mid-swirl, not “done” |
 | Window | `.accessory` + `statusBar` + join-all | No Dock; no `.stationary` |
