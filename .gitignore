@@ -1,0 +1,20 @@
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+build/
+.build/
+
+# macOS
+.DS_Store
+*.swp
+
+# Cursor / IDE
+.idea/
+*.xcworkspace/xcuserdata/
