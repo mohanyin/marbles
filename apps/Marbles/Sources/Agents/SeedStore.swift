@@ -18,6 +18,12 @@ struct SeedStore {
         return value
     }
 
+    func assign(_ seed: UInt64, to sessionID: String) {
+        var seeds = load()
+        seeds[sessionID] = String(seed, radix: 16)
+        save(seeds)
+    }
+
     private func load() -> [String: String] {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

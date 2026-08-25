@@ -98,6 +98,30 @@ final class OverlayController {
         }
     }
 
+    func cycleSelectedSeed() {
+        if let id = selectedAgentID {
+            store.cycleSeed(for: id)
+        }
+    }
+
+    func exportIdentitySheet() {
+        let renderer = rootView?.metalRenderer ?? MarbleRenderer()
+        guard let renderer, renderer.isReady else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Export"
+        panel.message = "Choose a folder for 100-marble identity sheets (PNG)"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            let written = IdentitySheet.write(using: renderer, to: url)
+            if !written.isEmpty {
+                NSWorkspace.shared.activateFileViewerSelecting(written)
+            }
+        }
+    }
+
     func replayFixture(named name: String) {
         guard let data = Self.fixtureData(named: name) else { return }
         let request = IngestAuth.hookRequest(url: ingestURL, body: data, token: ingestToken)

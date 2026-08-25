@@ -102,7 +102,8 @@ struct Agent: Identifiable, Equatable {
             id: "debug-\(index)",
             source: .demo,
             lastAssistantPreview: "Placeholder agent \(index + 1)",
-            lastEventAt: Date().addingTimeInterval(TimeInterval(index))
+            lastEventAt: Date().addingTimeInterval(TimeInterval(index)),
+            seed: Identity.seed(forDebugIndex: index)
         )
     }
 }

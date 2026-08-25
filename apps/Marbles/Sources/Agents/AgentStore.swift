@@ -158,6 +158,16 @@ final class AgentStore {
         releaseQueuedBlooms()
     }
 
+    func cycleSeed(for id: AgentID) {
+        guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
+        let next = Identity.nextSeed(agents[index].seed)
+        agents[index].seed = next
+        if !agents[index].isInjected {
+            seeds.assign(next, to: agents[index].id)
+        }
+        notify()
+    }
+
     func cycleTool(for id: AgentID) {
         let names = ["Read", "Edit", "Bash", "Grep", "Task"]
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }

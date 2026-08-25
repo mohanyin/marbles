@@ -17,6 +17,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Agents/Models.swift" \
   "$SRC/Agents/LatticeSlots.swift" \
   "$SRC/Agents/FixtureFiles.swift" \
+  "$SRC/Identity/Identity.swift" \
   "$SRC/Agents/IngestConstants.swift" \
   "$SRC/Agents/HookEvent.swift" \
   "$SRC/Agents/HookMapper.swift" \
@@ -35,6 +36,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$TESTS/HookMapperTests.swift" \
   "$TESTS/IngestAuthTests.swift" \
   "$TESTS/MotionTests.swift" \
+  "$TESTS/IdentityTests.swift" \
   "$TESTS/main.swift"
 
 "$OUT"

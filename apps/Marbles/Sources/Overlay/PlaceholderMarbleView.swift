@@ -15,6 +15,7 @@ final class PlaceholderMarbleView: NSView {
 
     var reducedMotion = false
     var now = Date()
+    var drawsInterior = true
 
     init(agent: Agent) {
         self.agent = agent
@@ -30,6 +31,7 @@ final class PlaceholderMarbleView: NSView {
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard drawsInterior else { return }
         let uniforms = MotionEngine.uniforms(for: agent, now: now, reducedMotion: reducedMotion, dim: dim)
         let rect = bounds
         let path = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
@@ -51,8 +53,13 @@ final class PlaceholderMarbleView: NSView {
     }
 
     private func fillColor(uniforms: MarbleFrameUniforms) -> NSColor {
-        let hue = CGFloat(agent.seed % 360) / 360
-        var color = NSColor(calibratedHue: hue, saturation: 0.48, brightness: 0.86, alpha: 0.94)
+        let params = Identity.params(seed: agent.seed)
+        var color = NSColor(
+            calibratedHue: CGFloat(params.hue),
+            saturation: CGFloat(params.saturation) * 0.85,
+            brightness: CGFloat(0.52 + params.luminosity * 0.42),
+            alpha: 0.94
+        )
         if uniforms.errorHue > 0 {
             var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             color.getHue(&h, saturation: &s, brightness: &b, alpha: &a)

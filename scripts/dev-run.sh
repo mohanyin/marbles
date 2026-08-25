@@ -42,8 +42,17 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+mkdir -p "$OUT/Contents/Resources" "$ROOT/apps/Marbles/build"
+cp "$ROOT/apps/Marbles/Resources/Shaders/Marble.metal" "$OUT/Contents/Resources/Marble.metal"
+if xcrun -sdk macosx metal -c "$ROOT/apps/Marbles/Resources/Shaders/Marble.metal" \
+  -o "$ROOT/apps/Marbles/build/Marble.air" -mmacosx-version-min=14.0 2>/dev/null
+then
+  xcrun -sdk macosx metallib "$ROOT/apps/Marbles/build/Marble.air" \
+    -o "$OUT/Contents/Resources/default.metallib" 2>/dev/null || true
+fi
+
 xcrun swiftc -parse-as-library -O -DDEBUG -sdk "$SDK" -target "$TARGET" \
-  -framework AppKit -framework SwiftUI -framework Network \
+  -framework AppKit -framework SwiftUI -framework Network -framework Metal -framework MetalKit \
   -o "$OUT/Contents/MacOS/Marbles" \
   $(find "$SRC" -name '*.swift' | sort)
 

@@ -4,6 +4,8 @@ final class OverlayRootView: NSView {
     private var marbleViews: [AgentID: PlaceholderMarbleView] = [:]
     private var chipViews: [String: ChipView] = [:]
     private let overflowView = OverflowMarbleView()
+    private let metalView: MarbleMetalView?
+    let metalRenderer: MarbleRenderer?
     let focusCard = FocusCardView()
 
     var displayedLayout: LayoutResult?
@@ -16,11 +18,22 @@ final class OverlayRootView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override init(frame frameRect: NSRect) {
+        if let renderer = MarbleRenderer(), renderer.isReady {
+            metalRenderer = renderer
+            metalView = MarbleMetalView(renderer: renderer)
+        } else {
+            metalRenderer = nil
+            metalView = nil
+        }
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         overflowView.isHidden = true
         focusCard.isHidden = true
+        if let metalView {
+            metalView.autoresizingMask = [.width, .height]
+            addSubview(metalView, positioned: .below, relativeTo: nil)
+        }
         addSubview(overflowView)
         addSubview(focusCard)
     }
@@ -48,12 +61,14 @@ final class OverlayRootView: NSView {
             if let agent = agentsByID[id] {
                 view.agent = agent
             }
+            view.drawsInterior = metalView == nil
             view.marbleSize = frame.size
             view.dim = frame.dim
             view.now = Date()
             view.reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             view.frame = rect(for: frame)
         }
+        submitMetal()
         layoutChips(mode: mode, focused: focused)
 
         if let overflow = layout.overflow, let frame = layout.overflowFrame {
@@ -177,6 +192,20 @@ final class OverlayRootView: NSView {
             }
         }
         layoutChips(mode: currentMode, focused: currentMode.focusedAgentID)
+        submitMetal()
+    }
+
+    private func submitMetal() {
+        guard let metalView, let metalRenderer, let layout = displayedLayout else { return }
+        metalView.frame = bounds
+        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let now = Date()
+        let items = layout.frames.compactMap { id, frame -> MarbleDrawItem? in
+            guard let agent = agentsByID[id] else { return nil }
+            return MarbleDrawItem(agent: agent, frame: frame, now: now, reducedMotion: reduced)
+        }
+        metalRenderer.submit(items: items, viewport: bounds.size, scale: window?.backingScaleFactor ?? 2)
+        metalView.setNeedsDisplay(metalView.bounds)
     }
 
     private func layoutChips(mode: OverlayMode, focused: AgentID?) {
@@ -232,6 +261,9 @@ final class OverlayRootView: NSView {
     }
 
     private func sortZ() {
+        if let metalView {
+            addSubview(metalView, positioned: .below, relativeTo: nil)
+        }
         let sorted = (displayedLayout?.frames ?? [:]).sorted { $0.value.z < $1.value.z }
         let overflowZ = displayedLayout?.overflowFrame?.z ?? Int.max
         var placedOverflow = overflowView.isHidden

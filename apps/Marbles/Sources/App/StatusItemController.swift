@@ -68,7 +68,9 @@ final class StatusItemController {
         debug.addItem(item("Set selected → Finished", #selector(statusFinished)))
         debug.addItem(item("Set selected → Error", #selector(statusError)))
         debug.addItem(item("Cycle current tool", #selector(cycleTool)))
+        debug.addItem(item("Cycle selected seed", #selector(cycleSeed)))
         debug.addItem(item("Fire completion bloom", #selector(fireBloom)))
+        debug.addItem(item("Export identity sheet…", #selector(exportSheet)))
         debug.addItem(.separator())
         debug.addItem(item("Replay SessionStart fixture", #selector(replayStart)))
         debug.addItem(item("Replay UserPrompt fixture", #selector(replayPrompt)))
@@ -140,7 +142,9 @@ final class StatusItemController {
     @objc private func statusFinished() { overlay.setSelectedStatus(.finished) }
     @objc private func statusError() { overlay.setSelectedStatus(.error) }
     @objc private func cycleTool() { overlay.cycleSelectedTool() }
+    @objc private func cycleSeed() { overlay.cycleSelectedSeed() }
     @objc private func fireBloom() { overlay.fireSelectedBloom() }
+    @objc private func exportSheet() { overlay.exportIdentitySheet() }
     @objc private func replayStart() { overlay.replayFixture(named: "session-start") }
     @objc private func replayPrompt() { overlay.replayFixture(named: "user-prompt") }
     @objc private func replayTool() { overlay.replayFixture(named: "pre-tool-use") }
