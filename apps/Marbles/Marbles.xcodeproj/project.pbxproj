@@ -36,6 +36,7 @@
 		A1000000000000000000001B /* Marble.metal in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* Marble.metal */; };
 		A1000000000000000000001C /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* Metal.framework */; };
 		A1000000000000000000001D /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* MetalKit.framework */; };
+		A10000000000000000000021 /* MarbleGlassDisc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002A /* MarbleGlassDisc.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,6 +69,7 @@
 		A20000000000000000000024 /* Marble.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Marble.metal; sourceTree = "<group>"; };
 		A20000000000000000000025 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		A20000000000000000000026 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		A2000000000000000000002A /* MarbleGlassDisc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarbleGlassDisc.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* Marbles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Marbles.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Marbles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marbles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -129,6 +131,7 @@
 				A20000000000000000000005 /* OverlayRootView.swift */,
 				A20000000000000000000006 /* OverlayController.swift */,
 				A20000000000000000000015 /* PlaceholderMarbleView.swift */,
+				A2000000000000000000002A /* MarbleGlassDisc.swift */,
 			);
 			path = Overlay;
 			sourceTree = "<group>";
@@ -327,6 +330,7 @@
 				A10000000000000000000018 /* Identity.swift in Sources */,
 				A10000000000000000000019 /* MarbleRenderer.swift in Sources */,
 				A1000000000000000000001A /* IdentitySheet.swift in Sources */,
+				A10000000000000000000021 /* MarbleGlassDisc.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -2,6 +2,7 @@ import AppKit
 
 final class OverlayRootView: NSView {
     private var marbleViews: [AgentID: PlaceholderMarbleView] = [:]
+    private var glassViews: [AgentID: MarbleGlassDisc] = [:]
     private var chipViews: [String: ChipView] = [:]
     private let overflowView = OverflowMarbleView()
     private let metalView: MarbleMetalView?
@@ -51,6 +52,8 @@ final class OverlayRootView: NSView {
         for id in marbleViews.keys where !ids.contains(id) {
             marbleViews[id]?.removeFromSuperview()
             marbleViews.removeValue(forKey: id)
+            glassViews[id]?.removeFromSuperview()
+            glassViews.removeValue(forKey: id)
         }
         for (id, frame) in layout.frames {
             let view = marbleViews[id] ?? PlaceholderMarbleView(agent: agentsByID[id] ?? Agent.debugDummy(index: 0))
@@ -67,6 +70,17 @@ final class OverlayRootView: NSView {
             view.now = Date()
             view.reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             view.frame = rect(for: frame)
+            let glass = glassViews[id] ?? MarbleGlassDisc(frame: .zero)
+            if glassViews[id] == nil {
+                glassViews[id] = glass
+                if let metalView {
+                    addSubview(glass, positioned: .below, relativeTo: metalView)
+                } else {
+                    addSubview(glass, positioned: .below, relativeTo: view)
+                }
+            }
+            glass.frame = glassRect(for: frame)
+            glass.isHidden = false
         }
         submitMetal()
         layoutChips(mode: mode, focused: focused)
@@ -260,9 +274,19 @@ final class OverlayRootView: NSView {
         )
     }
 
+    /// Pull the glass disc inside the painted sphere so its material rim
+    /// stays under the marble instead of drawing a bezel around it.
+    private func glassRect(for frame: MarbleFrame) -> NSRect {
+        let inset = max(4, frame.size * 0.12)
+        return rect(for: frame).insetBy(dx: inset, dy: inset)
+    }
+
     private func sortZ() {
+        for glass in glassViews.values {
+            addSubview(glass, positioned: .below, relativeTo: nil)
+        }
         if let metalView {
-            addSubview(metalView, positioned: .below, relativeTo: nil)
+            addSubview(metalView, positioned: .above, relativeTo: nil)
         }
         let sorted = (displayedLayout?.frames ?? [:]).sorted { $0.value.z < $1.value.z }
         let overflowZ = displayedLayout?.overflowFrame?.z ?? Int.max

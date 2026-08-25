@@ -29,7 +29,9 @@ struct MarbleGPUInstance {
 struct MarbleFrameConstants {
     var viewport: SIMD2<Float>
     var pointsPerPixel: Float
-    var pad: Float = 0
+    var hasBackdrop: Float
+    var backdropPad: SIMD2<Float>
+    var pad: SIMD2<Float> = .zero
 }
 
 struct MarbleSheetSection {
@@ -51,7 +53,13 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
     private var pipeline: MTLRenderPipelineState?
     private var instanceBuffer: MTLBuffer?
     private var instances: [MarbleGPUInstance] = []
-    private var constants = MarbleFrameConstants(viewport: SIMD2<Float>(1, 1), pointsPerPixel: 1)
+    private var constants = MarbleFrameConstants(
+        viewport: SIMD2<Float>(1, 1),
+        pointsPerPixel: 1,
+        hasBackdrop: 0,
+        backdropPad: SIMD2<Float>(56, 56)
+    )
+    private var placeholderBackdrop: MTLTexture?
 
     init?(device: MTLDevice? = MTLCreateSystemDefaultDevice()) {
         guard let device, let queue = device.makeCommandQueue() else { return nil }
@@ -59,6 +67,7 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         self.queue = queue
         super.init()
         precondition(MemoryLayout<MarbleGPUInstance>.stride == 96)
+        placeholderBackdrop = Self.makePlaceholderTexture(device: device)
         pipeline = Self.makePipeline(device: device)
         isReady = pipeline != nil
     }
@@ -68,7 +77,9 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         let height = max(viewport.height * scale, 1)
         constants = MarbleFrameConstants(
             viewport: SIMD2<Float>(Float(width), Float(height)),
-            pointsPerPixel: Float(1 / max(scale, 0.01))
+            pointsPerPixel: Float(1 / max(scale, 0.01)),
+            hasBackdrop: 0,
+            backdropPad: SIMD2<Float>(56, 56)
         )
         instances = items
             .sorted { $0.frame.z < $1.frame.z }
@@ -159,7 +170,9 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         instances = items
         constants = MarbleFrameConstants(
             viewport: SIMD2<Float>(Float(pixelW), Float(pixelH)),
-            pointsPerPixel: Float(1 / scale)
+            pointsPerPixel: Float(1 / scale),
+            hasBackdrop: 0,
+            backdropPad: SIMD2<Float>(56, 56)
         )
         defer {
             instances = previous
@@ -247,6 +260,7 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         var frame = constants
         encoder.setVertexBytes(&frame, length: MemoryLayout<MarbleFrameConstants>.stride, index: 1)
         encoder.setFragmentBytes(&frame, length: MemoryLayout<MarbleFrameConstants>.stride, index: 1)
+        encoder.setFragmentTexture(placeholderBackdrop, index: 0)
         if !instances.isEmpty {
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: instances.count)
         }
@@ -336,6 +350,17 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
         descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
         return try? device.makeRenderPipelineState(descriptor: descriptor)
+    }
+
+    private static func makePlaceholderTexture(device: MTLDevice) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm_srgb,
+            width: 1,
+            height: 1,
+            mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+        return device.makeTexture(descriptor: descriptor)
     }
 
     private static func loadLibrary(device: MTLDevice) -> MTLLibrary? {

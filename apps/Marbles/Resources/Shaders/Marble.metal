@@ -27,7 +27,9 @@ struct Instance {
 struct FrameConstants {
     float2 viewport;
     float pointsPerPixel;
-    float pad;
+    float hasBackdrop;
+    float2 backdropPad;
+    float2 pad;
 };
 
 struct VertexOut {
@@ -137,6 +139,11 @@ float accentHue(Instance m) {
     return m.noiseOffset.w;
 }
 
+/// Per-stop opacity in 0.10...0.75, even across the range. Seeded, not per-pixel.
+float stopOpacity(float seed) {
+    return mix(0.10, 0.75, hash11(seed));
+}
+
 struct Globe {
     float lon;
     float lat;
@@ -181,7 +188,7 @@ float3 shadeSlope(float3 lit, float3 shade, float x, float y, float crest, float
     return color;
 }
 
-float3 silk(float3 p, Instance m) {
+float4 silk(float3 p, Instance m) {
     Globe g = sphereOf(p);
     float t = m.time * (0.18 + 0.55 * m.advection);
     float3 q = g.wrap * (1.6 + m.inclusionDensity) + m.noiseOffset.xyz;
@@ -195,13 +202,19 @@ float3 silk(float3 p, Instance m) {
     float3 dark = hsv(m.hue, m.saturation, 0.16 + 0.18 * m.luminosity);
     float3 body = hsv(m.secondaryHue, min(1.0, m.saturation * 1.02), 0.62);
     float3 accent = hsv(accentHue(m), min(1.0, m.saturation * 0.88), 0.98);
+    float od = stopOpacity(m.hue * 13.7 + m.noiseOffset.x);
+    float ob = stopOpacity(m.secondaryHue * 19.1 + m.noiseOffset.y);
+    float oa = stopOpacity(accentHue(m) * 23.3 + m.noiseOffset.z);
     float3 color = mix(dark, body, mid);
+    float pigment = mix(od, ob, mid);
     color = mix(color, accent, ribbon * 0.95);
+    pigment = mix(pigment, oa, ribbon * 0.95);
     color = mix(color, accent, spark * 0.5);
-    return contrast(color, 1.22);
+    pigment = mix(pigment, oa, spark * 0.5);
+    return float4(contrast(color, 1.22), pigment);
 }
 
-float3 crystal(float3 p, Instance m) {
+float4 crystal(float3 p, Instance m) {
     Globe g = sphereOf(p);
     float2 field = float2(g.lon, g.lat) * (2.2 + m.inclusionDensity * 2.8) + m.noiseOffset.xy;
     float4 cellA = voronoiCell(field);
@@ -232,10 +245,10 @@ float3 crystal(float3 p, Instance m) {
     float3 color = mix(bg, flake, flakeA);
     color = mix(color, mix(flake, lift, 0.4), flakeB);
     color = mix(color, flakeLit, flakeC * 0.65);
-    return contrast(color, 1.16);
+    return float4(contrast(color, 1.16), 0.75);
 }
 
-float3 prism(float3 p, Instance m) {
+float4 prism(float3 p, Instance m) {
     Globe g = sphereOf(p);
     float t = m.time * (0.12 + 0.4 * m.advection);
     int count = 2 + int(clamp(m.inclusionDensity * 2.99, 0.0, 2.99));
@@ -244,6 +257,15 @@ float3 prism(float3 p, Instance m) {
     hues[1] = hsv(m.secondaryHue, m.saturation * 0.95, 0.52);
     hues[2] = hsv(accentHue(m), m.saturation * 0.88, 0.9);
     hues[3] = hsv(m.hue, m.saturation * 0.7, 0.28);
+    float dens[4];
+    dens[0] = stopOpacity(m.hue * 13.7 + m.noiseOffset.x);
+    dens[1] = stopOpacity(m.secondaryHue * 19.1 + m.noiseOffset.y);
+    dens[2] = stopOpacity(accentHue(m) * 23.3 + m.noiseOffset.z);
+    dens[3] = stopOpacity(m.hue * 31.1 + m.noiseOffset.x + 4.7);
+    if (fract(abs(m.noiseOffset.x) * 2.71828) > 0.64) {
+        int stain = int(floor(fract(abs(m.noiseOffset.y) * 1.61803) * float(count)));
+        dens[stain] = 0.0;
+    }
     float wobble = 0.04 * sin(g.lat * 5.0 + t);
     float gores = 2.4 + m.inclusionDensity * 2.2;
     float u = g.lon * 0.318309886 * gores + 0.5 + wobble + t * 0.08;
@@ -251,13 +273,16 @@ float3 prism(float3 p, Instance m) {
     int slot = int(floor(scaled));
     float f = fract(scaled);
     float3 color = hues[slot];
+    float pigment = dens[slot];
     int neighbor = f < 0.5 ? (slot + count - 1) % count : (slot + 1) % count;
     float seam = min(f, 1.0 - f);
-    color = mix(hues[neighbor], color, smoothstep(0.0, 0.03, seam));
-    return color;
+    float edge = smoothstep(0.0, 0.03, seam);
+    color = mix(hues[neighbor], color, edge);
+    pigment = mix(dens[neighbor], pigment, edge);
+    return float4(color, pigment);
 }
 
-float3 nebula(float3 p, Instance m) {
+float4 nebula(float3 p, Instance m) {
     Globe g = sphereOf(p);
     float t = m.time * (0.08 + 0.28 * m.advection);
     float3 q = g.wrap * 1.55 + m.noiseOffset.xyz + float3(t * 0.12, t * 0.05, -t * 0.08);
@@ -270,30 +295,48 @@ float3 nebula(float3 p, Instance m) {
     float3 dark = hsv(m.hue, m.saturation, 0.07 + 0.08 * m.luminosity);
     float3 gas = hsv(m.secondaryHue, m.saturation * 0.95, 0.72);
     float3 accent = hsv(accentHue(m), min(1.0, m.saturation * 0.86), 0.98);
+    float od = stopOpacity(m.hue * 11.3 + m.noiseOffset.x + 2.1);
+    float og = stopOpacity(m.secondaryHue * 17.9 + m.noiseOffset.y + 4.4);
+    float oa = stopOpacity(accentHue(m) * 29.7 + m.noiseOffset.z + 6.8);
     float3 color = mix(dark, gas, cloud);
+    float pigment = mix(od, og, cloud);
     color = mix(color, accent, vein * 0.78);
+    pigment = mix(pigment, oa, vein * 0.78);
     color = mix(color, accent, ember * 0.48);
-    return color;
+    pigment = mix(pigment, oa, ember * 0.48);
+    return float4(color, pigment);
 }
 
-float3 coreFamily(float3 p, Instance m) {
+float4 coreFamily(float3 p, Instance m) {
     Globe g = sphereOf(p);
     float d = g.r + 0.024 * sin(g.lon * 5.0 + m.noiseOffset.x);
     float3 rim = hsv(m.hue, m.saturation * 0.22, 0.94);
     float3 body = hsv(m.hue, m.saturation * 0.62, 0.58);
     float3 ring = hsv(m.secondaryHue, m.saturation * 0.8, 0.78);
     float3 heart = hsv(accentHue(m), m.saturation * 0.72, 0.28);
+    float orim = stopOpacity(m.hue * 8.4 + m.noiseOffset.x + 1.2);
+    float obody = stopOpacity(m.hue * 15.6 + m.noiseOffset.y + 3.5);
+    float oring = stopOpacity(m.secondaryHue * 21.2 + m.noiseOffset.z + 5.9);
+    float oheart = stopOpacity(accentHue(m) * 27.8 + m.noiseOffset.x + 8.1);
     float3 color = rim;
-    color = mix(color, body, smoothstep(0.88, 0.48, d));
-    color = mix(color, ring, smoothstep(0.5, 0.22, d));
-    color = mix(color, heart, smoothstep(0.24, 0.06, d));
+    float pigment = orim;
+    float toBody = smoothstep(0.88, 0.48, d);
+    color = mix(color, body, toBody);
+    pigment = mix(pigment, obody, toBody);
+    float toRing = smoothstep(0.5, 0.22, d);
+    color = mix(color, ring, toRing);
+    pigment = mix(pigment, oring, toRing);
+    float toHeart = smoothstep(0.24, 0.06, d);
+    color = mix(color, heart, toHeart);
+    pigment = mix(pigment, oheart, toHeart);
     float4 fleck = voronoiCell(float2(g.lon, g.lat) * (5.5 + m.inclusionDensity * 4.0) + m.noiseOffset.xy);
     float fleckMask = smoothstep(0.06 + fleck.y * 0.1, 0.012, fleck.x) * (0.18 + fleck.z * 0.82);
     color = mix(color, mix(ring, heart, fleck.w), fleckMask * 0.55);
-    return color;
+    pigment = mix(pigment, mix(oring, oheart, fleck.w), fleckMask * 0.55);
+    return float4(color, pigment);
 }
 
-float3 landscape(float3 p, Instance m, float radiusPoints) {
+float4 landscape(float3 p, Instance m, float radiusPoints) {
     Globe g = sphereOf(p);
     float x = g.lon;
     float y = g.lat;
@@ -353,10 +396,10 @@ float3 landscape(float3 p, Instance m, float radiusPoints) {
     if (y < fgH) {
         color = shadeSlope(fgLit, fgShade, x, y, fgH, m.noiseOffset.x + 5.2, 10.4 * fine, 0.14);
     }
-    return color;
+    return float4(color, 0.75);
 }
 
-float3 interior(float3 p, Instance m, float radiusPoints) {
+float4 interior(float3 p, Instance m, float radiusPoints) {
     int family = int(m.family + 0.5);
     if (family == 1) return crystal(p, m);
     if (family == 2) return prism(p, m);
@@ -394,7 +437,7 @@ float3 envMap(float3 direction, float3 light) {
     return col;
 }
 
-float3 sampleVolume(float3 p, Instance m, float radiusPoints, float advect) {
+float4 sampleVolume(float3 p, Instance m, float radiusPoints, float advect) {
     if (advect > 0.0) {
         float a = m.time * 0.11 * advect;
         float c = cos(a);
@@ -426,12 +469,19 @@ vertex VertexOut marble_vertex(
     return out;
 }
 
+float2 backdropUV(float2 panelUV, float2 disp, FrameConstants frame) {
+    float2 px = (panelUV + disp) * frame.viewport + frame.backdropPad;
+    return px / max(frame.viewport + 2.0 * frame.backdropPad, float2(1.0));
+}
+
 fragment float4 marble_fragment(
     VertexOut in [[stage_in]],
     constant Instance *instances [[buffer(0)]],
-    constant FrameConstants &frame [[buffer(1)]]
+    constant FrameConstants &frame [[buffer(1)]],
+    texture2d<float> backdrop [[texture(0)]]
 ) {
     Instance m = instances[in.iid];
+    constexpr sampler bgSamp(coord::normalized, address::clamp_to_edge, filter::linear);
     float2 uv = in.uv;
     float3 light = normalize(float3(-0.48, 0.78, 0.42));
     float3 ro = float3(0.0, 0.0, 2.45);
@@ -466,17 +516,39 @@ fragment float4 marble_fragment(
     float3 midR = pos0 + rfrR * (path * 0.42);
     float3 midB = pos0 + rfrB * (path * 0.42);
 
-    float3 volume;
-    volume.r = sampleVolume(midR, moving, radiusPoints, advect).r;
-    volume.g = sampleVolume(mid, moving, radiusPoints, advect).g;
-    volume.b = sampleVolume(midB, moving, radiusPoints, advect).b;
-    float3 volumeDeep = sampleVolume(pos0 + rfr0 * (path * 0.72), moving, radiusPoints, advect);
-    volume = mix(volume, volumeDeep, 0.35);
+    float4 volR = sampleVolume(midR, moving, radiusPoints, advect);
+    float4 volG = sampleVolume(mid, moving, radiusPoints, advect);
+    float4 volB = sampleVolume(midB, moving, radiusPoints, advect);
+    float4 volDeep = sampleVolume(pos0 + rfr0 * (path * 0.72), moving, radiusPoints, advect);
+    float3 volume = mix(float3(volR.r, volG.g, volB.b), volDeep.rgb, 0.35);
+    float pigment = mix(volG.a, volDeep.a, 0.35);
 
-    float3 beer = exp(-(1.15 - volume) * path * (0.42 + m.frost * 0.35));
+    float3 beer = exp(-(1.15 - volume) * path * mix(0.1, 0.42 + m.frost * 0.35, pigment));
     float pulseGlow = m.pulse * (0.08 + 0.07 * sin(m.time * 2.4));
     volume = contrast(volume * beer, 1.18);
     volume *= 0.86 + 0.28 * m.luminosity + pulseGlow;
+
+    if (frame.hasBackdrop > 0.5) {
+        float2 panelUV = in.position.xy / max(frame.viewport, float2(1.0));
+        float2 disp = nor0.xy * m.radius * (1.0 - eta) * 0.92 / max(frame.viewport, float2(1.0));
+        float2 dispR = nor0.xy * m.radius * (1.0 - eta * 0.985) * 0.92 / max(frame.viewport, float2(1.0));
+        float2 dispB = nor0.xy * m.radius * (1.0 - eta * 1.018) * 0.92 / max(frame.viewport, float2(1.0));
+        float3 scene = float3(
+            backdrop.sample(bgSamp, backdropUV(panelUV, dispR, frame)).r,
+            backdrop.sample(bgSamp, backdropUV(panelUV, disp, frame)).g,
+            backdrop.sample(bgSamp, backdropUV(panelUV, dispB, frame)).b
+        );
+        if (m.frost > 0.1) {
+            float2 jitter = float2(m.frost * 0.014);
+            float3 blur = backdrop.sample(bgSamp, backdropUV(panelUV, disp + jitter, frame)).rgb;
+            blur += backdrop.sample(bgSamp, backdropUV(panelUV, disp - jitter, frame)).rgb;
+            blur += backdrop.sample(bgSamp, backdropUV(panelUV, disp + float2(jitter.x, -jitter.y), frame)).rgb;
+            blur += backdrop.sample(bgSamp, backdropUV(panelUV, disp + float2(-jitter.x, jitter.y), frame)).rgb;
+            scene = mix(scene, blur * 0.25, saturate(m.frost));
+        }
+        volume = mix(scene, volume, saturate(pigment));
+        volume = mix(volume, scene, 0.08);
+    }
 
     float2 p = pos0.xy;
     float rad = length(p);
@@ -512,7 +584,10 @@ fragment float4 marble_fragment(
     color *= 1.0 - m.dim * 0.45;
 
     float shell = smoothstep(0.58, 0.97, rad);
-    float bodyAlpha = mix(0.96, 0.32, shell);
+    float bodyAlpha = mix(pigment, max(0.05, pigment * 0.34), shell);
+    if (frame.hasBackdrop > 0.5) {
+        bodyAlpha = mix(0.97, 0.58, shell);
+    }
     float alpha = max(bodyAlpha, sharp * 0.9 + bounce * 0.25);
     alpha *= 1.0 - m.dim * 0.2;
     color = saturate(color);
