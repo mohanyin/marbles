@@ -38,7 +38,7 @@ enum LayoutEngine {
         availableLineLength: CGFloat,
         cardTowardPositivePerpendicular: Bool
     ) -> LayoutResult {
-        let selection: (visible: [Agent], overflow: OverflowToken?) = visibleAgents(agents, focused: focusedID(mode))
+        let selection: (visible: [Agent], overflow: OverflowToken?) = visibleAgents(agents, focused: mode.focusedAgentID)
         switch mode {
         case .cluster:
             return clusterLayout(selection.visible, overflow: selection.overflow)
@@ -84,11 +84,6 @@ enum LayoutEngine {
         let (x, y, z) = latticeCoordinate(index: index)
         // Higher draws on top. Front lattice (z=0) must sit on the back layers.
         return (2 - z) * 100 - (x + y)
-    }
-
-    private static func focusedID(_ mode: OverlayMode) -> AgentID? {
-        if case .focus(let id) = mode { return id }
-        return nil
     }
 
     private static func visibleAgents(_ agents: [Agent], focused: AgentID?) -> ([Agent], OverflowToken?) {

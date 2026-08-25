@@ -15,13 +15,16 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   -framework AppKit \
   -o "$OUT" \
   "$SRC/Agents/Models.swift" \
-  "$SRC/Agents/AgentRoster.swift" \
+  "$SRC/Agents/LatticeSlots.swift" \
+  "$SRC/Agents/FixtureFiles.swift" \
   "$SRC/Agents/IngestConstants.swift" \
   "$SRC/Agents/HookEvent.swift" \
   "$SRC/Agents/HookMapper.swift" \
   "$SRC/Agents/SeedStore.swift" \
   "$SRC/Agents/AgentStore.swift" \
   "$SRC/Ingest/IngestAuth.swift" \
+  "$SRC/Motion/MotionEngine.swift" \
+  "$SRC/Chips/Chips.swift" \
   "$SRC/Mode/ModeController.swift" \
   "$SRC/Layout/SnapGeometry.swift" \
   "$SRC/Layout/LayoutEngine.swift" \
@@ -31,13 +34,17 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$TESTS/StatusTests.swift" \
   "$TESTS/HookMapperTests.swift" \
   "$TESTS/IngestAuthTests.swift" \
+  "$TESTS/MotionTests.swift" \
   "$TESTS/main.swift"
 
 "$OUT"
 
 HELPER="$ROOT/apps/Marbles/build/marbles-hook"
 xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
+  -framework Security \
   -o "$HELPER" \
+  "$SRC/Agents/IngestConstants.swift" \
+  "$SRC/Ingest/IngestAuth.swift" \
   "$ROOT/tools/marbles-hook/main.swift"
 
 set +e

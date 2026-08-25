@@ -52,28 +52,57 @@ struct Agent: Identifiable, Equatable {
     var latticeIndex: Int?
     var isDemo: Bool
     var animationTime: Float
+    var bloomStartedAt: Date?
+    var errorHueStartedAt: Date?
+    var errorHueReleasedAt: Date?
 
-    static func debugDummy(index: Int) -> Agent {
-        let id = "debug-\(index)"
-        return Agent(
+    /// Debug-injected stand-ins. Distinct from `isDemo`, which hides first-launch placeholders from layout.
+    var isInjected: Bool {
+        source == .demo || id.hasPrefix("debug-")
+    }
+
+    static func make(
+        id: AgentID,
+        source: Source,
+        status: AgentStatus = .idle,
+        cwd: URL? = nil,
+        conductorWorkspaceID: String? = nil,
+        lastAssistantPreview: String? = nil,
+        lastEventAt: Date? = nil,
+        seed: UInt64? = nil,
+        isDemo: Bool = false
+    ) -> Agent {
+        Agent(
             id: id,
-            cwd: nil,
+            cwd: cwd,
             pid: nil,
-            source: .demo,
-            conductorWorkspaceID: nil,
-            status: .idle,
+            source: source,
+            conductorWorkspaceID: conductorWorkspaceID,
+            status: status,
             turnOpen: false,
             currentTool: nil,
             recentTools: [],
-            lastAssistantPreview: "Placeholder agent \(index + 1)",
+            lastAssistantPreview: lastAssistantPreview,
             subagents: [],
             startedAt: Date(),
-            lastEventAt: Date().addingTimeInterval(TimeInterval(index)),
+            lastEventAt: lastEventAt ?? Date(),
             sessionEndedAt: nil,
-            seed: FNV.hash64(id),
+            seed: seed ?? FNV.hash64(id),
             latticeIndex: nil,
-            isDemo: false,
-            animationTime: 0
+            isDemo: isDemo,
+            animationTime: 0,
+            bloomStartedAt: nil,
+            errorHueStartedAt: nil,
+            errorHueReleasedAt: nil
+        )
+    }
+
+    static func debugDummy(index: Int) -> Agent {
+        make(
+            id: "debug-\(index)",
+            source: .demo,
+            lastAssistantPreview: "Placeholder agent \(index + 1)",
+            lastEventAt: Date().addingTimeInterval(TimeInterval(index))
         )
     }
 }

@@ -49,7 +49,10 @@ xcrun swiftc -parse-as-library -O -DDEBUG -sdk "$SDK" -target "$TARGET" \
 
 mkdir -p "$OUT/Contents/Helpers"
 xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
+  -framework Security \
   -o "$OUT/Contents/Helpers/marbles-hook" \
+  "$SRC/Agents/IngestConstants.swift" \
+  "$SRC/Ingest/IngestAuth.swift" \
   "$ROOT/tools/marbles-hook/main.swift"
 
 pkill -x Marbles 2>/dev/null || true

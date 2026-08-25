@@ -2,25 +2,6 @@ import Foundation
 
 let timeout: TimeInterval = 0.15
 
-struct IngestTarget {
-    var url: URL
-    var token: String?
-}
-
-func ingestTarget() -> IngestTarget {
-    let file = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Marbles/ingest.json")
-    if let data = try? Data(contentsOf: file),
-       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-    {
-        let url = (json["url"] as? String).flatMap(URL.init(string:))
-            ?? URL(string: "http://127.0.0.1:17832/hook")!
-        let token = json["token"] as? String
-        return IngestTarget(url: url, token: token)
-    }
-    return IngestTarget(url: URL(string: "http://127.0.0.1:17832/hook")!, token: nil)
-}
-
 func debugLog(_ message: String) {
     guard ProcessInfo.processInfo.environment["MARBLES_HOOK_DEBUG"] == "1" else { return }
     let directory = FileManager.default.homeDirectoryForCurrentUser
@@ -44,15 +25,8 @@ if body.isEmpty || (try? JSONSerialization.jsonObject(with: body)) == nil {
     body = Data(#"{"parseError":true}"#.utf8)
 }
 
-let target = ingestTarget()
-var request = URLRequest(url: target.url, timeoutInterval: timeout)
-request.httpMethod = "POST"
-request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-request.setValue("1", forHTTPHeaderField: "X-Marbles-Hook")
-if let token = target.token, !token.isEmpty {
-    request.setValue(token, forHTTPHeaderField: "X-Marbles-Token")
-}
-request.httpBody = body
+let target = IngestConstants.loadPublishedTarget()
+let request = IngestAuth.hookRequest(url: target.url, body: body, token: target.token, timeout: timeout)
 
 let semaphore = DispatchSemaphore(value: 0)
 URLSession.shared.dataTask(with: request) { _, _, error in

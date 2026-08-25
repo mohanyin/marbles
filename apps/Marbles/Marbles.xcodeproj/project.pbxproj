@@ -14,7 +14,8 @@
 		A10000000000000000000005 /* OverlayRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* OverlayRootView.swift */; };
 		A10000000000000000000006 /* OverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* OverlayController.swift */; };
 		A10000000000000000000007 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* Models.swift */; };
-		A10000000000000000000008 /* AgentRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* AgentRoster.swift */; };
+		A10000000000000000000008 /* LatticeSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* LatticeSlots.swift */; };
+		A10000000000000000000017 /* FixtureFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* FixtureFiles.swift */; };
 		A10000000000000000000009 /* ModeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* ModeController.swift */; };
 		A1000000000000000000000A /* SnapGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* SnapGeometry.swift */; };
 		A1000000000000000000000B /* LayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* LayoutEngine.swift */; };
@@ -26,6 +27,9 @@
 		A10000000000000000000011 /* AgentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* AgentStore.swift */; };
 		A10000000000000000000012 /* IngestServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* IngestServer.swift */; };
 		A10000000000000000000013 /* IngestAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* IngestAuth.swift */; };
+		A10000000000000000000014 /* MotionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001D /* MotionEngine.swift */; };
+		A10000000000000000000015 /* Chips.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* Chips.swift */; };
+		A10000000000000000000016 /* ChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* ChipView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,7 +40,8 @@
 		A20000000000000000000005 /* OverlayRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayRootView.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* OverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayController.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		A20000000000000000000011 /* AgentRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoster.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* LatticeSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeSlots.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* FixtureFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureFiles.swift; sourceTree = "<group>"; };
 		A20000000000000000000012 /* ModeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeController.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* SnapGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapGeometry.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* LayoutEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngine.swift; sourceTree = "<group>"; };
@@ -48,6 +53,9 @@
 		A2000000000000000000001A /* AgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStore.swift; sourceTree = "<group>"; };
 		A2000000000000000000001B /* IngestServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestServer.swift; sourceTree = "<group>"; };
 		A2000000000000000000001C /* IngestAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestAuth.swift; sourceTree = "<group>"; };
+		A2000000000000000000001D /* MotionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionEngine.swift; sourceTree = "<group>"; };
+		A2000000000000000000001E /* Chips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chips.swift; sourceTree = "<group>"; };
+		A2000000000000000000001F /* ChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipView.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* Marbles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Marbles.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Marbles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marbles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -81,6 +89,8 @@
 				A40000000000000000000008 /* Layout */,
 				A40000000000000000000004 /* Overlay */,
 				A40000000000000000000009 /* Ingest */,
+				A4000000000000000000000A /* Motion */,
+				A4000000000000000000000B /* Chips */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -110,7 +120,8 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000010 /* Models.swift */,
-				A20000000000000000000011 /* AgentRoster.swift */,
+				A20000000000000000000011 /* LatticeSlots.swift */,
+				A20000000000000000000020 /* FixtureFiles.swift */,
 				A20000000000000000000016 /* HookEvent.swift */,
 				A20000000000000000000017 /* HookMapper.swift */,
 				A20000000000000000000018 /* IngestConstants.swift */,
@@ -144,6 +155,23 @@
 				A2000000000000000000001C /* IngestAuth.swift */,
 			);
 			path = Ingest;
+			sourceTree = "<group>";
+		};
+		A4000000000000000000000A /* Motion */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000001D /* MotionEngine.swift */,
+			);
+			path = Motion;
+			sourceTree = "<group>";
+		};
+		A4000000000000000000000B /* Chips */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000001E /* Chips.swift */,
+				A2000000000000000000001F /* ChipView.swift */,
+			);
+			path = Chips;
 			sourceTree = "<group>";
 		};
 		A40000000000000000000005 /* Products */ = {
@@ -229,7 +257,8 @@
 				A10000000000000000000005 /* OverlayRootView.swift in Sources */,
 				A10000000000000000000006 /* OverlayController.swift in Sources */,
 				A10000000000000000000007 /* Models.swift in Sources */,
-				A10000000000000000000008 /* AgentRoster.swift in Sources */,
+				A10000000000000000000008 /* LatticeSlots.swift in Sources */,
+				A10000000000000000000017 /* FixtureFiles.swift in Sources */,
 				A10000000000000000000009 /* ModeController.swift in Sources */,
 				A1000000000000000000000A /* SnapGeometry.swift in Sources */,
 				A1000000000000000000000B /* LayoutEngine.swift in Sources */,
@@ -241,6 +270,9 @@
 				A10000000000000000000011 /* AgentStore.swift in Sources */,
 				A10000000000000000000012 /* IngestServer.swift in Sources */,
 				A10000000000000000000013 /* IngestAuth.swift in Sources */,
+				A10000000000000000000014 /* MotionEngine.swift in Sources */,
+				A10000000000000000000015 /* Chips.swift in Sources */,
+				A10000000000000000000016 /* ChipView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

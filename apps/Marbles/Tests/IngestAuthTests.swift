@@ -35,7 +35,7 @@ enum IngestAuthTests {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ingest-\(UUID().uuidString).json")
         let existing = IngestAuth.generateToken()
-        let payload = ["url": "http://127.0.0.1:17832/hook", "token": existing]
+        let payload = ["url": IngestConstants.defaultURL().absoluteString, "token": existing]
         let data = try! JSONSerialization.data(withJSONObject: payload)
         try! data.write(to: url)
         TestRun.expectEqual(IngestAuth.loadOrCreateToken(at: url), existing)

@@ -2,6 +2,7 @@ import AppKit
 
 final class OverlayRootView: NSView {
     private var marbleViews: [AgentID: PlaceholderMarbleView] = [:]
+    private var chipViews: [String: ChipView] = [:]
     private let overflowView = OverflowMarbleView()
     let focusCard = FocusCardView()
 
@@ -9,6 +10,7 @@ final class OverlayRootView: NSView {
     var agentsByID: [AgentID: Agent] = [:]
     /// Active/Focus: clicks on empty panel chrome dismiss instead of falling through.
     var capturesEmptyClicks = false
+    private var currentMode: OverlayMode = .cluster
 
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
@@ -27,8 +29,9 @@ final class OverlayRootView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func apply(layout: LayoutResult, agents: [Agent], focused: AgentID?) {
+    func apply(layout: LayoutResult, agents: [Agent], focused: AgentID?, mode: OverlayMode) {
         displayedLayout = layout
+        currentMode = mode
         agentsByID = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
 
         let ids = Set(layout.frames.keys)
@@ -47,8 +50,11 @@ final class OverlayRootView: NSView {
             }
             view.marbleSize = frame.size
             view.dim = frame.dim
+            view.now = Date()
+            view.reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             view.frame = rect(for: frame)
         }
+        layoutChips(mode: mode, focused: focused)
 
         if let overflow = layout.overflow, let frame = layout.overflowFrame {
             overflowView.isHidden = false
@@ -100,6 +106,14 @@ final class OverlayRootView: NSView {
             }
         }
         if let layout = displayedLayout {
+            for (key, chip) in chipViews where !chip.isHidden {
+                let dx = point.x - chip.frame.midX
+                let dy = point.y - chip.frame.midY
+                if (dx * dx + dy * dy) <= (chip.frame.width / 2) * (chip.frame.width / 2),
+                   let id = key.split(separator: "#").first {
+                    return .marble(String(id))
+                }
+            }
             let ordered = layout.frames.sorted { $0.value.z > $1.value.z }
             for (id, frame) in ordered {
                 let dx = point.x - frame.center.x
@@ -144,7 +158,68 @@ final class OverlayRootView: NSView {
             case .waitingOnUser: preview = "Waiting for you"
             }
         }
-        return "\(preview)\n\(agent.source.rawValue) · \(String(describing: agent.status))"
+        let trail = agent.recentTools.prefix(3).map { tool in
+            "\(tool.phase == .failed ? "!" : "•") \(tool.name)"
+        }.joined(separator: "  ")
+        let chips = trail.isEmpty ? "" : "\n\(trail)"
+        return "\(preview)\(chips)\n\(agent.source.rawValue) · \(String(describing: agent.status))"
+    }
+
+    func tickMotion(agents: [Agent], reducedMotion: Bool) {
+        agentsByID = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
+        let now = Date()
+        for (id, view) in marbleViews {
+            if let agent = agentsByID[id] {
+                view.agent = agent
+                view.now = now
+                view.reducedMotion = reducedMotion
+                view.needsDisplay = true
+            }
+        }
+        layoutChips(mode: currentMode, focused: currentMode.focusedAgentID)
+    }
+
+    private func layoutChips(mode: OverlayMode, focused: AgentID?) {
+        var seen = Set<String>()
+        let now = Date()
+        if case .focus = mode {
+            for (key, view) in chipViews {
+                view.isHidden = true
+                _ = key
+            }
+            return
+        }
+        for (id, frame) in displayedLayout?.frames ?? [:] {
+            guard let agent = agentsByID[id] else { continue }
+            let chips: [(ChipKind, CGFloat)]
+            switch mode {
+            case .cluster:
+                chips = Chips.clusterChip(for: agent).map { [($0, 1)] } ?? []
+            case .active:
+                chips = Chips.activeChips(for: agent, now: now)
+            case .focus:
+                chips = []
+            }
+            let size = Chips.size(for: frame.size)
+            for (index, item) in chips.enumerated() {
+                let key = "\(id)#\(index)"
+                seen.insert(key)
+                let view = chipViews[key] ?? ChipView(frame: .zero)
+                if chipViews[key] == nil {
+                    chipViews[key] = view
+                    addSubview(view, positioned: .above, relativeTo: marbleViews[id])
+                }
+                view.kind = item.0
+                view.fade = item.1
+                view.isHidden = false
+                let center = Chips.center(for: frame, index: index)
+                view.frame = NSRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
+            }
+        }
+        for key in chipViews.keys where !seen.contains(key) {
+            chipViews[key]?.removeFromSuperview()
+            chipViews.removeValue(forKey: key)
+        }
     }
 
     private func rect(for frame: MarbleFrame) -> NSRect {
@@ -171,6 +246,9 @@ final class OverlayRootView: NSView {
         }
         if !placedOverflow {
             addSubview(overflowView, positioned: .above, relativeTo: nil)
+        }
+        for view in chipViews.values {
+            addSubview(view, positioned: .above, relativeTo: nil)
         }
         addSubview(focusCard, positioned: .above, relativeTo: nil)
     }

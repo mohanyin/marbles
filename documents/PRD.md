@@ -324,7 +324,7 @@ MCP tools fall back to a generic plug/spark icon plus a one-letter or truncated 
 
 In Cluster, show **one** live chip (current tool or thinking). In Active, show the live chip plus a short trail. In Focus, show a compact recent-activity row.
 
-Chips must stay legible at 36pt: ~8–10pt marks sitting on the rim, not icons dropped into the interior where the silk texture will hide them.
+Chips must stay legible at 36pt: ~18pt marks sitting on the rim, not icons dropped into the interior where the silk texture will hide them.
 
 ### 9.4 Needs-you state
 

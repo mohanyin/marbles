@@ -4,6 +4,11 @@ enum OverlayMode: Equatable {
     case cluster
     case active
     case focus(AgentID)
+
+    var focusedAgentID: AgentID? {
+        if case .focus(let id) = self { return id }
+        return nil
+    }
 }
 
 @MainActor

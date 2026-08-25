@@ -7,6 +7,7 @@ final class AgentStore {
 
     private let seeds: SeedStore
     private var lingerTimer: Timer?
+    private var bloomQueue: [AgentID] = []
 
     init(seeds: SeedStore = SeedStore()) {
         self.seeds = seeds
@@ -123,25 +124,38 @@ final class AgentStore {
             return agent
         }
         LatticeSlots.assign(&next)
-        let live = agents.filter { !isInjected($0) }
+        let live = agents.filter { !$0.isInjected }
         agents = next + live
         LatticeSlots.assign(&agents)
         notify()
     }
 
     func clearInjected() {
-        agents.removeAll { isInjected($0) }
+        agents.removeAll { $0.isInjected }
         notify()
     }
 
     func setStatus(_ status: AgentStatus, for id: AgentID) {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
-        agents[index].status = status
+        applyTransition(from: agents[index].status, to: status, on: &agents[index], forceBloom: false)
         agents[index].lastEventAt = Date()
         if status == .finished || status == .error {
             agents[index].turnOpen = false
         }
         notify()
+    }
+
+    func fireBloom(for id: AgentID) {
+        guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
+        requestBloom(index: index, force: true)
+        notify()
+    }
+
+    func advanceAnimationTime(_ dt: Float) {
+        for index in agents.indices where MotionEngine.shouldAdvanceTime(agents[index].status) {
+            agents[index].animationTime += dt
+        }
+        releaseQueuedBlooms()
     }
 
     func cycleTool(for id: AgentID) {
@@ -184,25 +198,12 @@ final class AgentStore {
             if let hint = event.sourceHint { agents[index].source = hint }
             return
         }
-        let agent = Agent(
+        let agent = Agent.make(
             id: event.sessionID,
-            cwd: event.cwd.map { URL(fileURLWithPath: $0) },
-            pid: nil,
             source: event.sourceHint ?? .cli,
+            cwd: event.cwd.map { URL(fileURLWithPath: $0) },
             conductorWorkspaceID: conductorID(from: event.cwd),
-            status: .idle,
-            turnOpen: false,
-            currentTool: nil,
-            recentTools: [],
-            lastAssistantPreview: nil,
-            subagents: [],
-            startedAt: Date(),
-            lastEventAt: Date(),
-            sessionEndedAt: nil,
-            seed: seeds.seed(for: event.sessionID),
-            latticeIndex: nil,
-            isDemo: false,
-            animationTime: 0
+            seed: seeds.seed(for: event.sessionID)
         )
         agents.append(agent)
         LatticeSlots.assign(&agents)
@@ -216,7 +217,8 @@ final class AgentStore {
                 if agent.recentTools.count > 3 { agent.recentTools = Array(agent.recentTools.prefix(3)) }
             }
             agent.currentTool = nil
-            agent.status = agent.turnOpen ? .thinking : .finished
+            let next: AgentStatus = agent.turnOpen ? .thinking : .finished
+            applyTransition(from: agent.status, to: next, on: &agent, forceBloom: false)
             agent.lastEventAt = Date()
         }
     }
@@ -243,9 +245,9 @@ final class AgentStore {
                 agent.lastAssistantPreview = preview
             }
             if error {
-                agent.status = .error
+                applyTransition(from: agent.status, to: .error, on: &agent, forceBloom: false)
             } else if agent.status != .error {
-                agent.status = .finished
+                applyTransition(from: agent.status, to: .finished, on: &agent, forceBloom: false)
             }
             agent.lastEventAt = Date()
         }
@@ -291,16 +293,52 @@ final class AgentStore {
         onChange?()
     }
 
-    private func isInjected(_ agent: Agent) -> Bool {
-        agent.source == .demo || agent.id.hasPrefix("debug-")
-    }
-
     private func debugStatus(index: Int, count: Int) -> AgentStatus {
         if count == 3 {
             return [.working, .thinking, .finished][index]
         }
         let all: [AgentStatus] = [.working, .thinking, .waitingOnUser, .finished, .error, .idle]
         return all[index % all.count]
+    }
+
+    private func applyTransition(from previous: AgentStatus, to next: AgentStatus, on agent: inout Agent, forceBloom: Bool) {
+        agent.status = next
+        if next == .error {
+            agent.bloomStartedAt = nil
+            agent.errorHueStartedAt = Date()
+            agent.errorHueReleasedAt = nil
+            bloomQueue.removeAll { $0 == agent.id }
+            return
+        }
+        if previous == .error {
+            agent.errorHueReleasedAt = Date()
+        }
+        if next == .finished, previous != .error || forceBloom {
+            agent.bloomStartedAt = Date()
+        }
+    }
+
+    private func requestBloom(index: Int, force: Bool) {
+        if agents[index].status == .error, !force { return }
+        let now = Date()
+        let active = agents.filter { MotionEngine.bloomEnvelope(startedAt: $0.bloomStartedAt, now: now) > 0 }.count
+        if active >= MotionEngine.maxConcurrentBlooms {
+            if !bloomQueue.contains(agents[index].id) {
+                bloomQueue.append(agents[index].id)
+            }
+            return
+        }
+        agents[index].bloomStartedAt = now
+    }
+
+    private func releaseQueuedBlooms() {
+        let now = Date()
+        let active = agents.filter { MotionEngine.bloomEnvelope(startedAt: $0.bloomStartedAt, now: now) > 0 }.count
+        guard active < MotionEngine.maxConcurrentBlooms, let next = bloomQueue.first else { return }
+        bloomQueue.removeFirst()
+        if let index = agents.firstIndex(where: { $0.id == next }) {
+            agents[index].bloomStartedAt = now
+        }
     }
 
     private func conductorID(from cwd: String?) -> String? {

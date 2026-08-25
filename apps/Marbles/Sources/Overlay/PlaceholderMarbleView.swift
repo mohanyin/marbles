@@ -13,6 +13,9 @@ final class PlaceholderMarbleView: NSView {
         didSet { alphaValue = 1 - dim * 0.55 }
     }
 
+    var reducedMotion = false
+    var now = Date()
+
     init(agent: Agent) {
         self.agent = agent
         super.init(frame: .zero)
@@ -27,13 +30,66 @@ final class PlaceholderMarbleView: NSView {
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
+        let uniforms = MotionEngine.uniforms(for: agent, now: now, reducedMotion: reducedMotion, dim: dim)
         let rect = bounds
         let path = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
         NSGraphicsContext.saveGraphicsState()
         path.addClip()
-        color(for: agent.seed).setFill()
-        path.fill()
 
+        fillColor(uniforms: uniforms).setFill()
+        path.fill()
+        drawSwirl(in: rect, uniforms: uniforms)
+        drawHighlight(in: rect)
+        if uniforms.bloom > 0 {
+            drawBloom(in: rect, uniforms: uniforms)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        rimColor(uniforms: uniforms).setStroke()
+        path.lineWidth = 1 + CGFloat(uniforms.rimBoost) * 3 + CGFloat(uniforms.attention) * 1.5
+        path.stroke()
+    }
+
+    private func fillColor(uniforms: MarbleFrameUniforms) -> NSColor {
+        let hue = CGFloat(agent.seed % 360) / 360
+        var color = NSColor(calibratedHue: hue, saturation: 0.48, brightness: 0.86, alpha: 0.94)
+        if uniforms.errorHue > 0 {
+            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            color.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+            let towardRed = h > 0.5 ? h + (1 - h) * CGFloat(uniforms.errorHue) : h * (1 - CGFloat(uniforms.errorHue))
+            color = NSColor(
+                calibratedHue: towardRed.truncatingRemainder(dividingBy: 1),
+                saturation: min(1, s + 0.25 * CGFloat(uniforms.errorHue)),
+                brightness: b,
+                alpha: a
+            )
+        }
+        if uniforms.freeze > 0, uniforms.errorHue == 0 {
+            color = color.blended(withFraction: 0.08, of: .white) ?? color
+        }
+        return color
+    }
+
+    private func drawSwirl(in rect: NSRect, uniforms: MarbleFrameUniforms) {
+        let motion = max(uniforms.advection, uniforms.hold > 0 ? 0.12 : 0)
+        guard motion > 0 || uniforms.pulse > 0 else { return }
+        let angle = CGFloat(uniforms.time) * (0.9 + CGFloat(uniforms.advection))
+        for band in 0..<3 {
+            let spin = angle + CGFloat(band) * 0.7
+            let inset = rect.insetBy(dx: rect.width * (0.12 + CGFloat(band) * 0.08), dy: rect.height * (0.18 + CGFloat(band) * 0.04))
+            var transform = AffineTransform()
+            transform.translate(x: rect.midX, y: rect.midY)
+            transform.rotate(byRadians: spin)
+            transform.scale(x: 1.15, y: 0.42)
+            transform.translate(x: -rect.midX, y: -rect.midY)
+            let swirl = NSBezierPath(ovalIn: inset)
+            swirl.transform(using: transform)
+            NSColor.white.withAlphaComponent(0.10 + 0.07 * CGFloat(motion)).setFill()
+            swirl.fill()
+        }
+    }
+
+    private func drawHighlight(in rect: NSRect) {
         let highlight = NSBezierPath(
             ovalIn: NSRect(
                 x: rect.minX + rect.width * 0.18,
@@ -44,38 +100,39 @@ final class PlaceholderMarbleView: NSView {
         )
         NSColor.white.withAlphaComponent(0.32).setFill()
         highlight.fill()
-        NSGraphicsContext.restoreGraphicsState()
-
-        statusColor(for: agent.status).setStroke()
-        path.lineWidth = agent.status == .idle ? 1 : 2.5
-        path.stroke()
-
-        if agent.status == .error {
-            NSColor.systemRed.withAlphaComponent(0.35).setFill()
-            path.fill()
-        }
     }
 
-    private func color(for seed: UInt64) -> NSColor {
-        let hue = CGFloat(seed % 360) / 360
-        return NSColor(calibratedHue: hue, saturation: 0.48, brightness: 0.86, alpha: 0.94)
+    private func drawBloom(in rect: NSRect, uniforms: MarbleFrameUniforms) {
+        let sweep = CGFloat(uniforms.bloom) * .pi * 1.6
+        let arc = NSBezierPath()
+        arc.appendArc(
+            withCenter: CGPoint(x: rect.midX, y: rect.midY),
+            radius: rect.width * 0.38,
+            startAngle: 200,
+            endAngle: 200 + sweep * 180 / .pi,
+            clockwise: false
+        )
+        arc.lineWidth = 3
+        NSColor.white.withAlphaComponent(0.25 + 0.55 * CGFloat(uniforms.bloom)).setStroke()
+        arc.stroke()
+        NSColor.white.withAlphaComponent(0.12 * CGFloat(uniforms.bloom)).setFill()
+        NSBezierPath(ovalIn: rect.insetBy(dx: 4, dy: 4)).fill()
     }
 
-    private func statusColor(for status: AgentStatus) -> NSColor {
-        switch status {
-        case .idle:
-            return NSColor.white.withAlphaComponent(0.55)
-        case .working:
-            return NSColor.systemOrange
-        case .thinking:
-            return NSColor.systemBlue
-        case .waitingOnUser:
-            return NSColor.systemYellow
-        case .finished:
-            return NSColor.systemGreen
-        case .error:
-            return NSColor.systemRed
+    private func rimColor(uniforms: MarbleFrameUniforms) -> NSColor {
+        if uniforms.errorHue > 0.2 {
+            return NSColor.systemRed.withAlphaComponent(0.55 + 0.45 * CGFloat(uniforms.errorHue))
         }
+        if uniforms.attention > 0 {
+            return NSColor.systemYellow.withAlphaComponent(0.45 + 0.55 * CGFloat(uniforms.attention))
+        }
+        if uniforms.rimBoost > 0 {
+            return NSColor.white.withAlphaComponent(0.55 + CGFloat(uniforms.rimBoost))
+        }
+        if uniforms.advection > 0.7 {
+            return NSColor.white.withAlphaComponent(0.7)
+        }
+        return NSColor.white.withAlphaComponent(0.5)
     }
 }
 

@@ -56,13 +56,7 @@ enum HookMapperTests {
     }
 
     private static func fixtureDirectory() -> URL? {
-        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        for _ in 0..<6 {
-            let candidate = directory.appendingPathComponent("Tests/Fixtures/hooks")
-            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
-            directory.deleteLastPathComponent()
-        }
-        return nil
+        FixtureFiles.hooksDirectory(startingAt: #filePath)
     }
 
     private static func load(_ directory: URL, _ name: String) -> HookEvent? {

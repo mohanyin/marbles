@@ -9,6 +9,7 @@ struct MarblesTestRunner {
         StatusTests.run()
         HookMapperTests.run()
         IngestAuthTests.run()
+        MotionTests.run()
         if TestRun.failures > 0 {
             print("\(TestRun.failures) test(s) failed")
             exit(1)

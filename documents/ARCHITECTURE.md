@@ -479,7 +479,7 @@ Map via `Chips.symbol(for:)`:
 
 | `name` | SF Symbol |
 | --- | --- |
-| thinking | `ellipsis.circle` |
+| thinking | `ellipsis` |
 | Read | `doc.text` |
 | Write / Edit / NotebookEdit | `pencil` |
 | Bash / Shell | `apple.terminal` |
@@ -488,13 +488,13 @@ Map via `Chips.symbol(for:)`:
 | Task | `arrow.triangle.branch` (omit if a satellite exists) |
 | `mcp__*` | `powerplug` + server token = second path segment, Focus only |
 | git | `arrow.triangle.branch` if Bash `command` prefix is `git` (after optional path) |
-| permission | `questionmark.circle` |
-| finished | `checkmark.circle` |
-| tool fail | `exclamationmark.circle` |
+| permission | `questionmark` |
+| finished | `checkmark` |
+| tool fail | `exclamationmark` |
 
 Chip sits on the **lower-right rim** in screen space (does not orbit). Satellites (if pref on): up to 3 dots, 8pt, 14pt outside the rim, inherit parent identity hue, no extra motion when reduced-motion.
 
-Chip size ~8–10pt on the rim at cluster scale. Thinking glyph ≠ tool glyph.
+Chip size ~18pt on the rim at cluster scale (~22pt Active, ~24pt Focus). Thinking glyph ≠ tool glyph.
 
 ---
 

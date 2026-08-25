@@ -43,4 +43,16 @@ enum IngestAuth {
     static func restrictFile(at url: URL) {
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
+
+    static func hookRequest(url: URL, body: Data, token: String?, timeout: TimeInterval = 60) -> URLRequest {
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("1", forHTTPHeaderField: IngestConstants.hookLabelHeader)
+        if let token, !token.isEmpty {
+            request.setValue(token, forHTTPHeaderField: headerName)
+        }
+        request.httpBody = body
+        return request
+    }
 }

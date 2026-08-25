@@ -22,14 +22,14 @@ final class OverlayController {
 
     private var drag: DragState?
     private var lastInteractionWasOverlay = false
+    private var motionTimer: Timer?
 
     var isVisible: Bool {
         panel?.isVisible ?? false
     }
 
     private var focusedID: AgentID? {
-        if case .focus(let id) = mode.mode { return id }
-        return nil
+        mode.mode.focusedAgentID
     }
 
     init(store: AgentStore) {
@@ -48,12 +48,14 @@ final class OverlayController {
         relayout(animated: false)
         panel.orderFrontRegardless()
         startMouseTracking()
+        startMotionClock()
         updateIgnoreMouseEvents()
         onVisibilityChange?(true)
     }
 
     func hide() {
         panel?.orderOut(nil)
+        stopMotionClock()
         stopMouseTracking()
         onVisibilityChange?(false)
     }
@@ -90,25 +92,20 @@ final class OverlayController {
         }
     }
 
+    func fireSelectedBloom() {
+        if let id = selectedAgentID {
+            store.fireBloom(for: id)
+        }
+    }
+
     func replayFixture(named name: String) {
         guard let data = Self.fixtureData(named: name) else { return }
-        var request = URLRequest(url: ingestURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("1", forHTTPHeaderField: "X-Marbles-Hook")
-        request.setValue(ingestToken, forHTTPHeaderField: IngestAuth.headerName)
-        request.httpBody = data
+        let request = IngestAuth.hookRequest(url: ingestURL, body: data, token: ingestToken)
         URLSession.shared.dataTask(with: request).resume()
     }
 
     static func fixtureData(named name: String) -> Data? {
-        let file = "\(name).json"
-        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        for _ in 0..<6 {
-            let candidate = directory.appendingPathComponent("Tests/Fixtures/hooks").appendingPathComponent(file)
-            if let data = try? Data(contentsOf: candidate) { return data }
-            directory.deleteLastPathComponent()
-        }
+        if let data = FixtureFiles.data(named: name, startingAt: #filePath) { return data }
         return Bundle.main.url(forResource: name, withExtension: "json").flatMap { try? Data(contentsOf: $0) }
     }
 
@@ -182,7 +179,7 @@ final class OverlayController {
         panel.setFrame(NSRect(origin: origin, size: layout.panelSize), display: true)
         rootView.frame = NSRect(origin: .zero, size: layout.panelSize)
         rootView.capturesEmptyClicks = mode.mode != .cluster
-        rootView.apply(layout: layout, agents: store.agents, focused: focusedID)
+        rootView.apply(layout: layout, agents: store.agents, focused: focusedID, mode: mode.mode)
         currentLayout = layout
         updateIgnoreMouseEvents()
     }
@@ -230,6 +227,27 @@ final class OverlayController {
         ]) { [weak self] event in
             self?.handleLocal(event) ?? event
         }
+    }
+
+    private func startMotionClock() {
+        stopMotionClock()
+        motionTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.tickMotion()
+            }
+        }
+        motionTimer?.tolerance = 0.004
+    }
+
+    private func stopMotionClock() {
+        motionTimer?.invalidate()
+        motionTimer = nil
+    }
+
+    private func tickMotion() {
+        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        store.advanceAnimationTime(1.0 / 60.0)
+        rootView?.tickMotion(agents: store.agents, reducedMotion: reduced)
     }
 
     private func stopMouseTracking() {
