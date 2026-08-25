@@ -3,10 +3,12 @@ import AppKit
 @MainActor
 final class StatusItemController {
     private let overlay: OverlayController
+    private let prefs: PrefsStore
     private let statusItem: NSStatusItem
 
-    init(overlay: OverlayController) {
+    init(overlay: OverlayController, prefs: PrefsStore = .shared) {
         self.overlay = overlay
+        self.prefs = prefs
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(
             systemSymbolName: "circle.fill",
@@ -15,17 +17,23 @@ final class StatusItemController {
         statusItem.button?.image?.isTemplate = true
         statusItem.menu = makeMenu()
 
-        overlay.onVisibilityChange = { [weak self] _ in
-            self?.rebuildMenu()
+        overlay.onVisibilityChange = { [weak self] visible in
+            self?.prefs.update { $0.overlayHidden = !visible }
+            self?.rebuild()
         }
     }
 
-    private func rebuildMenu() {
+    func rebuild() {
         statusItem.menu = makeMenu()
+    }
+
+    private func rebuildMenu() {
+        rebuild()
     }
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
+        let checklist = Hooks.checklist()
 
         let toggle = NSMenuItem(
             title: overlay.isVisible ? "Hide Overlay" : "Show Overlay",
@@ -47,11 +55,24 @@ final class StatusItemController {
 
         let hooks = NSMenuItem(
             title: "Install / Repair Hooks",
-            action: nil,
+            action: #selector(installHooks),
             keyEquivalent: ""
         )
-        hooks.isEnabled = false
+        hooks.target = self
         menu.addItem(hooks)
+
+        let undo = NSMenuItem(
+            title: "Undo Hooks",
+            action: #selector(undoHooks),
+            keyEquivalent: ""
+        )
+        undo.target = self
+        undo.isEnabled = checklist.claudeHooks == .installed || checklist.cursorHooks == .installed
+        menu.addItem(undo)
+
+        let setup = NSMenuItem(title: "Setup", action: nil, keyEquivalent: "")
+        setup.submenu = makeChecklistMenu(checklist)
+        menu.addItem(setup)
 
         menu.addItem(.separator())
 
@@ -107,6 +128,32 @@ final class StatusItemController {
         return menu
     }
 
+    private func makeChecklistMenu(_ checklist: HookChecklist) -> NSMenu {
+        let menu = NSMenu(title: "Setup")
+        menu.addItem(info("Claude hooks: \(label(checklist.claudeHooks))"))
+        menu.addItem(info("Cursor hooks: \(label(checklist.cursorHooks))"))
+        menu.addItem(info("Claude Code: \(checklist.claudeCodeDetected ? "Detected" : "Not found")"))
+        menu.addItem(info("Cursor: \(checklist.cursorDetected ? "Detected" : "Not found")"))
+        menu.addItem(info("Conductor: \(checklist.conductorDetected ? "Detected" : "Not found")"))
+        menu.addItem(.separator())
+        menu.addItem(info("Start a Claude Code or Cursor Agent session to see a live marble."))
+        return menu
+    }
+
+    private func label(_ state: HookFileState) -> String {
+        switch state {
+        case .installed: return "Installed"
+        case .missing: return "Missing"
+        case .error: return "Error"
+        }
+    }
+
+    private func info(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
     private func item(_ title: String, _ selector: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
         item.target = self
@@ -120,6 +167,34 @@ final class StatusItemController {
     @objc private func openPreferences() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func installHooks() {
+        do {
+            try Hooks.install()
+            let alert = NSAlert()
+            alert.messageText = "Hooks installed"
+            alert.informativeText = "Restart any already-open Claude Code session to connect it. New sessions pick up hooks immediately."
+            alert.runModal()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t install hooks"
+            alert.informativeText = "A settings file looks invalid, so Marbles left it alone. Fix the JSON and try Repair."
+            alert.runModal()
+        }
+        rebuild()
+    }
+
+    @objc private func undoHooks() {
+        do {
+            try Hooks.undo()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t undo hooks"
+            alert.informativeText = "A settings file looks invalid, so Marbles left it alone."
+            alert.runModal()
+        }
+        rebuild()
     }
 
     @objc private func showAbout() {

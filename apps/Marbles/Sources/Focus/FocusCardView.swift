@@ -4,7 +4,9 @@ final class FocusCardView: NSView {
     static let size = LayoutEngine.focusCardSize
 
     private let backdrop = NSVisualEffectView()
-    private let preview = NSTextField(labelWithString: "")
+    private let title = NSTextField(labelWithString: "")
+    private let previewScroll = NSScrollView()
+    private let preview = NSTextView()
     private let reply = NSTextField(labelWithString: "Reply isn’t available yet.")
     private var chipViews: [ChipView] = []
     private let claudeButton = FocusCardView.makeAction("Open Claude Code")
@@ -26,13 +28,34 @@ final class FocusCardView: NSView {
         backdrop.wantsLayer = true
         addSubview(backdrop)
 
+        title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = .labelColor
+        title.lineBreakMode = .byTruncatingTail
+        title.maximumNumberOfLines = 1
+        addSubview(title)
+
+        previewScroll.hasVerticalScroller = true
+        previewScroll.hasHorizontalScroller = false
+        previewScroll.autohidesScrollers = true
+        previewScroll.drawsBackground = false
+        previewScroll.borderType = .noBorder
+        previewScroll.scrollerStyle = .overlay
+        previewScroll.documentView = preview
+        addSubview(previewScroll)
+
+        preview.isEditable = false
+        preview.isSelectable = true
+        preview.isRichText = false
+        preview.drawsBackground = false
         preview.font = NSFont.systemFont(ofSize: 13)
         preview.textColor = .labelColor
-        preview.maximumNumberOfLines = 3
-        preview.lineBreakMode = .byWordWrapping
-        preview.cell?.wraps = true
-        preview.cell?.truncatesLastVisibleLine = true
-        addSubview(preview)
+        preview.textContainerInset = .zero
+        preview.textContainer?.lineFragmentPadding = 0
+        preview.isVerticallyResizable = true
+        preview.isHorizontallyResizable = false
+        preview.textContainer?.widthTracksTextView = true
+        preview.minSize = NSSize(width: 0, height: 0)
+        preview.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
         reply.font = NSFont.systemFont(ofSize: 11)
         reply.textColor = .secondaryLabelColor
@@ -48,7 +71,18 @@ final class FocusCardView: NSView {
     }
 
     func apply(agent: Agent) {
-        preview.stringValue = FocusPreview.line(for: agent)
+        if let heading = FocusPreview.title(for: agent) {
+            title.stringValue = heading
+            title.isHidden = false
+        } else {
+            title.stringValue = ""
+            title.isHidden = true
+        }
+        let next = FocusPreview.line(for: agent)
+        if preview.string != next {
+            preview.string = next
+            preview.scrollToBeginningOfDocument(nil)
+        }
         let actions = FocusPreview.actions(for: agent)
         claudeButton.isHidden = !actions.showClaudeCode
         cursorButton.isHidden = !actions.showCursor
@@ -63,10 +97,21 @@ final class FocusCardView: NSView {
         backdrop.frame = bounds
         let pad: CGFloat = 14
         let width = bounds.width - pad * 2
-        preview.frame = NSRect(x: pad, y: pad, width: width, height: 52)
+        var y = pad
+        if !title.isHidden {
+            title.frame = NSRect(x: pad, y: y, width: width, height: 18)
+            y += 22
+        }
+        let previewHeight: CGFloat = title.isHidden ? 182 : 160
+        previewScroll.frame = NSRect(x: pad, y: y, width: width, height: previewHeight)
+        let inner = max(previewScroll.contentSize.width, 1)
+        preview.minSize = NSSize(width: inner, height: 0)
+        preview.maxSize = NSSize(width: inner, height: CGFloat.greatestFiniteMagnitude)
+        preview.textContainer?.containerSize = NSSize(width: inner, height: CGFloat.greatestFiniteMagnitude)
+        preview.frame.size.width = inner
 
         var x = pad
-        let chipY = pad + 56
+        let chipY = y + previewHeight + 10
         let chip: CGFloat = 22
         for view in chipViews {
             view.frame = NSRect(x: x, y: chipY, width: chip, height: chip)

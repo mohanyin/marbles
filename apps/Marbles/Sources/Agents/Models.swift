@@ -42,8 +42,12 @@ struct Agent: Identifiable, Equatable {
     var status: AgentStatus
     var turnOpen: Bool
     var currentTool: ToolEvent?
+    var pendingTools: [ToolEvent]
+    var toolHoldUntil: Date?
     var recentTools: [ToolEvent]
     var lastAssistantPreview: String?
+    var title: String?
+    var transcriptPath: String?
     var subagents: [SubagentRecord]
     var startedAt: Date
     var lastEventAt: Date
@@ -68,6 +72,8 @@ struct Agent: Identifiable, Equatable {
         cwd: URL? = nil,
         conductorWorkspaceID: String? = nil,
         lastAssistantPreview: String? = nil,
+        title: String? = nil,
+        transcriptPath: String? = nil,
         lastEventAt: Date? = nil,
         seed: UInt64? = nil,
         isDemo: Bool = false
@@ -81,8 +87,12 @@ struct Agent: Identifiable, Equatable {
             status: status,
             turnOpen: false,
             currentTool: nil,
+            pendingTools: [],
+            toolHoldUntil: nil,
             recentTools: [],
             lastAssistantPreview: lastAssistantPreview,
+            title: title,
+            transcriptPath: transcriptPath,
             subagents: [],
             startedAt: Date(),
             lastEventAt: lastEventAt ?? Date(),
@@ -102,6 +112,7 @@ struct Agent: Identifiable, Equatable {
             id: "debug-\(index)",
             source: .demo,
             lastAssistantPreview: "Placeholder agent \(index + 1)",
+            title: "Dummy \(index + 1)",
             lastEventAt: Date().addingTimeInterval(TimeInterval(index)),
             seed: Identity.seed(forDebugIndex: index)
         )

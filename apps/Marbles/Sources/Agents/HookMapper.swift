@@ -21,7 +21,7 @@ enum HookMapper {
 
         let toolName = mappedToolName(string(obj, "tool_name", "toolName"))
         let toolInput = obj["tool_input"] ?? obj["toolInput"]
-        let text = string(obj, "text", "last_assistant_message", "lastAssistantMessage")
+        let text = string(obj, "last_assistant_message", "lastAssistantMessage", "text")
 
         return HookEvent(
             hookEventName: name,
@@ -30,7 +30,7 @@ enum HookMapper {
             transcriptPath: string(obj, "transcript_path", "transcriptPath"),
             toolName: toolName,
             toolInputSummary: toolSummary(name: toolName, input: toolInput),
-            lastAssistantMessage: text.map { String($0.prefix(280)) },
+            lastAssistantMessage: text.map { String($0.prefix(IngestConstants.previewLimit)) },
             notificationType: string(obj, "notification_type", "notificationType", "type"),
             agentID: string(obj, "agent_id", "agentID"),
             agentType: string(obj, "agent_type", "agentType"),

@@ -8,6 +8,8 @@ final class AgentStore {
     private let seeds: SeedStore
     private var lingerTimer: Timer?
     private var bloomQueue: [AgentID] = []
+    private var pendingStarts: [AgentID: HookEvent] = [:]
+    private var previewRetry: [AgentID: Int] = [:]
 
     init(seeds: SeedStore = SeedStore()) {
         self.seeds = seeds
@@ -28,28 +30,32 @@ final class AgentStore {
 
     func apply(_ event: HookEvent) {
         if event.parseError { return }
+        if event.kind == .ignore { return }
         switch event.kind {
         case .ignore:
             return
         case .sessionStart:
             applySessionStart(event)
         case .userPromptSubmit:
-            mutate(event.sessionID) { agent in
+            mutate(event) { agent in
                 agent.turnOpen = true
                 agent.status = .thinking
                 agent.sessionEndedAt = nil
                 agent.lastEventAt = Date()
             }
+            refreshFromTranscript(event.sessionID)
         case .preToolUse:
-            mutate(event.sessionID) { agent in
-                agent.currentTool = ToolEvent(
-                    id: UUID().uuidString,
-                    name: event.toolName ?? "Tool",
-                    fileHint: event.toolInputSummary,
-                    phase: .started,
-                    at: Date()
+            mutate(event) { agent in
+                presentTool(
+                    ToolEvent(
+                        id: UUID().uuidString,
+                        name: event.toolName ?? "Tool",
+                        fileHint: event.toolInputSummary,
+                        phase: .started,
+                        at: Date()
+                    ),
+                    on: &agent
                 )
-                agent.status = .working
                 agent.lastEventAt = Date()
             }
         case .postToolUse:
@@ -57,7 +63,7 @@ final class AgentStore {
         case .postToolUseFailure:
             applyPostTool(event, phase: .failed)
         case .permissionRequest:
-            mutate(event.sessionID) { agent in
+            mutate(event) { agent in
                 agent.status = .waitingOnUser
                 agent.lastEventAt = Date()
             }
@@ -68,28 +74,33 @@ final class AgentStore {
         case .stopFailure:
             applyStop(event, error: true)
         case .subagentStart:
-            mutate(event.sessionID) { agent in
+            mutate(event) { agent in
                 let id = event.agentID ?? UUID().uuidString
                 if !agent.subagents.contains(where: { $0.id == id }) {
                     agent.subagents.append(SubagentRecord(id: id, type: event.agentType, startedAt: Date()))
                 }
                 if agent.currentTool?.name == "Task" {
-                    agent.currentTool = nil
+                    if !agent.pendingTools.isEmpty {
+                        let next = agent.pendingTools.removeFirst()
+                        show(next, on: &agent, now: Date())
+                    } else {
+                        agent.currentTool = nil
+                        agent.toolHoldUntil = nil
+                    }
                 }
                 agent.lastEventAt = Date()
             }
         case .subagentStop:
-            mutate(event.sessionID) { agent in
+            mutate(event) { agent in
                 if let id = event.agentID {
                     agent.subagents.removeAll { $0.id == id }
-                }
-                if let preview = event.lastAssistantMessage {
-                    agent.lastAssistantPreview = preview
                 }
                 agent.lastEventAt = Date()
             }
         case .sessionEnd:
-            mutate(event.sessionID) { agent in
+            pendingStarts.removeValue(forKey: event.sessionID)
+            mutate(event, createIfMissing: false) { agent in
+                clearTools(on: &agent, retireCurrent: true)
                 agent.sessionEndedAt = Date()
                 agent.turnOpen = false
                 if isErrorEnd(event.sessionEndReason) || agent.status == .error {
@@ -100,19 +111,17 @@ final class AgentStore {
                 agent.lastEventAt = Date()
             }
         case .afterAgentThought:
-            mutate(event.sessionID) { agent in
-                if agent.turnOpen, agent.currentTool == nil {
+            mutate(event) { agent in
+                if agent.turnOpen, agent.currentTool == nil, agent.pendingTools.isEmpty {
                     agent.status = .thinking
                 }
                 agent.lastEventAt = Date()
             }
         case .afterAgentResponse:
-            mutate(event.sessionID) { agent in
-                if let preview = event.lastAssistantMessage {
-                    agent.lastAssistantPreview = preview
-                }
+            mutate(event) { agent in
                 agent.lastEventAt = Date()
             }
+            refreshFromTranscript(event.sessionID, fallback: event.lastAssistantMessage)
         }
         notify()
     }
@@ -135,6 +144,22 @@ final class AgentStore {
         notify()
     }
 
+    func ensureDemo() {
+        guard !agents.contains(where: { $0.isDemo }) else { return }
+        agents.insert(DemoMarble.make(), at: 0)
+        LatticeSlots.assign(&agents)
+        notify()
+    }
+
+    func removeDemo() {
+        let before = agents.count
+        agents.removeAll { $0.isDemo }
+        if agents.count != before {
+            LatticeSlots.assign(&agents)
+            notify()
+        }
+    }
+
     func setStatus(_ status: AgentStatus, for id: AgentID) {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         applyTransition(from: agents[index].status, to: status, on: &agents[index], forceBloom: false)
@@ -151,11 +176,14 @@ final class AgentStore {
         notify()
     }
 
-    func advanceAnimationTime(_ dt: Float) {
+    func advanceAnimationTime(_ dt: Float, now: Date = Date()) {
         for index in agents.indices where MotionEngine.shouldAdvanceTime(agents[index].status) {
             agents[index].animationTime += dt
         }
         releaseQueuedBlooms()
+        if releaseToolHolds(now: now) {
+            notify()
+        }
     }
 
     func cycleSeed(for id: AgentID) {
@@ -180,6 +208,8 @@ final class AgentStore {
             phase: .started,
             at: Date()
         )
+        agents[index].pendingTools = []
+        agents[index].toolHoldUntil = Date().addingTimeInterval(IngestConstants.toolDwell)
         agents[index].status = .working
         agents[index].lastEventAt = Date()
         notify()
@@ -189,14 +219,15 @@ final class AgentStore {
         let source = event.sessionStartSource ?? ""
         let revive = source == "resume" || source == "compact"
         if let index = agents.firstIndex(where: { $0.id == event.sessionID }) {
+            removeDemo()
             if revive {
-                agents[index].currentTool = nil
+                clearTools(on: &agents[index], retireCurrent: false)
                 agents[index].status = .idle
                 agents[index].sessionEndedAt = nil
                 agents[index].lastEventAt = Date()
             } else {
                 agents[index].recentTools = []
-                agents[index].currentTool = nil
+                clearTools(on: &agents[index], retireCurrent: false)
                 agents[index].lastAssistantPreview = nil
                 agents[index].subagents = []
                 agents[index].turnOpen = false
@@ -206,29 +237,24 @@ final class AgentStore {
             }
             if let cwd = event.cwd { agents[index].cwd = URL(fileURLWithPath: cwd) }
             if let hint = event.sourceHint { agents[index].source = hint }
+            if let path = event.transcriptPath { agents[index].transcriptPath = path }
+            refreshFromTranscript(event.sessionID)
+            pendingStarts.removeValue(forKey: event.sessionID)
             return
         }
-        let agent = Agent.make(
-            id: event.sessionID,
-            source: event.sourceHint ?? .cli,
-            cwd: event.cwd.map { URL(fileURLWithPath: $0) },
-            conductorWorkspaceID: conductorID(from: event.cwd),
-            seed: seeds.seed(for: event.sessionID)
-        )
-        agents.append(agent)
-        LatticeSlots.assign(&agents)
+        let snapshot = peek(event)
+        if snapshot.hasConversation || revive {
+            insertAgent(from: event, title: snapshot.title)
+            pendingStarts.removeValue(forKey: event.sessionID)
+        } else {
+            pendingStarts[event.sessionID] = event
+        }
     }
 
     private func applyPostTool(_ event: HookEvent, phase: ToolEvent.Phase) {
-        mutate(event.sessionID) { agent in
-            if var tool = agent.currentTool {
-                tool.phase = phase
-                agent.recentTools.insert(tool, at: 0)
-                if agent.recentTools.count > 3 { agent.recentTools = Array(agent.recentTools.prefix(3)) }
-            }
-            agent.currentTool = nil
-            let next: AgentStatus = agent.turnOpen ? .thinking : .finished
-            applyTransition(from: agent.status, to: next, on: &agent, forceBloom: false)
+        mutate(event) { agent in
+            finishFirstStarted(phase: phase, on: &agent)
+            _ = advanceHeldTool(now: Date(), on: &agent)
             agent.lastEventAt = Date()
         }
     }
@@ -240,7 +266,7 @@ final class AgentStore {
             return
         }
         let needsYou = ["permission_prompt", "idle_prompt", "agent_needs_input"].contains(type)
-        mutate(event.sessionID) { agent in
+        mutate(event) { agent in
             if needsYou {
                 agent.status = .waitingOnUser
             }
@@ -249,11 +275,9 @@ final class AgentStore {
     }
 
     private func applyStop(_ event: HookEvent, error: Bool) {
-        mutate(event.sessionID) { agent in
+        mutate(event) { agent in
+            clearTools(on: &agent, retireCurrent: true)
             agent.turnOpen = false
-            if let preview = event.lastAssistantMessage {
-                agent.lastAssistantPreview = preview
-            }
             if error {
                 applyTransition(from: agent.status, to: .error, on: &agent, forceBloom: false)
             } else if agent.status != .error {
@@ -261,32 +285,84 @@ final class AgentStore {
             }
             agent.lastEventAt = Date()
         }
+        refreshFromTranscript(event.sessionID, fallback: event.lastAssistantMessage)
+        schedulePreviewRetry(event.sessionID)
     }
 
-    private func mutate(_ sessionID: AgentID, _ body: (inout Agent) -> Void) {
-        if !agents.contains(where: { $0.id == sessionID }) {
-            applySessionStart(HookEvent(
-                hookEventName: "SessionStart",
-                sessionID: sessionID,
-                cwd: nil,
-                transcriptPath: nil,
-                toolName: nil,
-                toolInputSummary: nil,
-                lastAssistantMessage: nil,
-                notificationType: nil,
-                agentID: nil,
-                agentType: nil,
-                sessionEndReason: nil,
-                sessionStartSource: "startup",
-                composerMode: nil,
-                isBackgroundAgent: nil,
-                stopStatus: nil,
-                sourceHint: nil,
-                parseError: false
-            ))
+    private func mutate(_ event: HookEvent, createIfMissing: Bool = true, _ body: (inout Agent) -> Void) {
+        if !agents.contains(where: { $0.id == event.sessionID }) {
+            guard createIfMissing else { return }
+            let start = pendingStarts.removeValue(forKey: event.sessionID) ?? event
+            insertAgent(from: start, title: peek(start).title)
         }
-        guard let index = agents.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let index = agents.firstIndex(where: { $0.id == event.sessionID }) else { return }
+        if let path = event.transcriptPath { agents[index].transcriptPath = path }
         body(&agents[index])
+    }
+
+    private func insertAgent(from event: HookEvent, title: String?) {
+        removeDemo()
+        var agent = Agent.make(
+            id: event.sessionID,
+            source: event.sourceHint ?? .cli,
+            cwd: event.cwd.map { URL(fileURLWithPath: $0) },
+            conductorWorkspaceID: conductorID(from: event.cwd),
+            title: title,
+            transcriptPath: event.transcriptPath,
+            seed: seeds.seed(for: event.sessionID)
+        )
+        if agent.transcriptPath == nil {
+            agent.transcriptPath = TranscriptPeek.resolvedPath(
+                sessionID: event.sessionID,
+                cwd: event.cwd,
+                explicit: event.transcriptPath
+            )
+        }
+        agents.append(agent)
+        LatticeSlots.assign(&agents)
+    }
+
+    private func peek(_ event: HookEvent) -> TranscriptSnapshot {
+        let path = TranscriptPeek.resolvedPath(
+            sessionID: event.sessionID,
+            cwd: event.cwd,
+            explicit: event.transcriptPath
+        )
+        return TranscriptPeek.inspect(path: path)
+    }
+
+    private func refreshFromTranscript(_ id: AgentID, fallback: String? = nil) {
+        guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
+        let path = TranscriptPeek.resolvedPath(
+            sessionID: agents[index].id,
+            cwd: agents[index].cwd?.path,
+            explicit: agents[index].transcriptPath
+        )
+        let snapshot = TranscriptPeek.inspect(path: path)
+        if let title = snapshot.title {
+            agents[index].title = title
+        }
+        if let text = TranscriptPeek.latestAssistantText(path: path) {
+            agents[index].lastAssistantPreview = text
+        } else if let fallback, !fallback.isEmpty, agents[index].source == .cursor {
+            agents[index].lastAssistantPreview = String(fallback.prefix(IngestConstants.previewLimit))
+        }
+    }
+
+    private func schedulePreviewRetry(_ id: AgentID) {
+        let token = (previewRetry[id] ?? 0) + 1
+        previewRetry[id] = token
+        Task { @MainActor in
+            for delay in [400_000_000, 1_200_000_000] as [UInt64] {
+                try? await Task.sleep(nanoseconds: delay)
+                guard previewRetry[id] == token else { return }
+                let before = agent(id: id)?.lastAssistantPreview
+                refreshFromTranscript(id)
+                if agent(id: id)?.lastAssistantPreview != before {
+                    notify()
+                }
+            }
+        }
     }
 
     private func sweepLingered() {
@@ -349,6 +425,87 @@ final class AgentStore {
         if let index = agents.firstIndex(where: { $0.id == next }) {
             agents[index].bloomStartedAt = now
         }
+    }
+
+    private func presentTool(_ tool: ToolEvent, on agent: inout Agent, now: Date = Date()) {
+        if agent.currentTool == nil {
+            show(tool, on: &agent, now: now)
+            return
+        }
+        agent.pendingTools.append(tool)
+        if agent.pendingTools.count > IngestConstants.maxQueuedTools {
+            agent.pendingTools = Array(agent.pendingTools.suffix(IngestConstants.maxQueuedTools))
+        }
+        agent.status = .working
+    }
+
+    private func show(_ tool: ToolEvent, on agent: inout Agent, now: Date) {
+        agent.currentTool = tool
+        agent.toolHoldUntil = now.addingTimeInterval(IngestConstants.toolDwell)
+        agent.status = .working
+    }
+
+    private func finishFirstStarted(phase: ToolEvent.Phase, on agent: inout Agent) {
+        if var tool = agent.currentTool, tool.phase == .started {
+            tool.phase = phase
+            agent.currentTool = tool
+            return
+        }
+        if let index = agent.pendingTools.firstIndex(where: { $0.phase == .started }) {
+            agent.pendingTools[index].phase = phase
+        }
+    }
+
+    private func retire(_ tool: ToolEvent, on agent: inout Agent) {
+        agent.recentTools.insert(tool, at: 0)
+        if agent.recentTools.count > 3 {
+            agent.recentTools = Array(agent.recentTools.prefix(3))
+        }
+    }
+
+    private func clearTools(on agent: inout Agent, retireCurrent: Bool) {
+        if retireCurrent, let tool = agent.currentTool {
+            retire(tool, on: &agent)
+        }
+        agent.currentTool = nil
+        agent.pendingTools = []
+        agent.toolHoldUntil = nil
+    }
+
+    @discardableResult
+    private func releaseToolHolds(now: Date) -> Bool {
+        var changed = false
+        for index in agents.indices {
+            if advanceHeldTool(now: now, on: &agents[index]) {
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    @discardableResult
+    private func advanceHeldTool(now: Date, on agent: inout Agent) -> Bool {
+        guard let current = agent.currentTool else { return false }
+        guard let until = agent.toolHoldUntil else { return false }
+        if now < until { return false }
+        if current.phase == .started { return false }
+
+        retire(current, on: &agent)
+        if !agent.pendingTools.isEmpty {
+            let next = agent.pendingTools.removeFirst()
+            show(next, on: &agent, now: now)
+            return true
+        }
+        agent.currentTool = nil
+        agent.toolHoldUntil = nil
+        if agent.turnOpen,
+           agent.status != .waitingOnUser,
+           agent.status != .error,
+           agent.status != .finished
+        {
+            applyTransition(from: agent.status, to: .thinking, on: &agent, forceBloom: false)
+        }
+        return true
     }
 
     private func conductorID(from cwd: String?) -> String? {

@@ -167,7 +167,7 @@ final class OverlayController {
         )
         let available: CGFloat = orientation.axis == .vertical ? safe.height : safe.width
         let cardPositive = cardTowardPositive(snap: snap, panelOrigin: panel.frame.origin, panelSize: panel.frame.size, screen: screen)
-        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reduced = prefersReducedMotion
         let target = LayoutEngine.layout(
             agents: store.agents,
             mode: mode.mode,
@@ -203,6 +203,7 @@ final class OverlayController {
         panel.setFrame(NSRect(origin: origin, size: layout.panelSize), display: true)
         rootView.frame = NSRect(origin: .zero, size: layout.panelSize)
         rootView.capturesEmptyClicks = mode.mode != .cluster
+        rootView.reducedMotion = prefersReducedMotion
         rootView.apply(layout: layout, agents: store.agents, focused: focusedID, mode: mode.mode)
         currentLayout = layout
         updateIgnoreMouseEvents()
@@ -269,7 +270,7 @@ final class OverlayController {
     }
 
     private func tickMotion() {
-        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reduced = prefersReducedMotion
         store.advanceAnimationTime(1.0 / 60.0)
         rootView?.tickMotion(agents: store.agents, reducedMotion: reduced)
     }
@@ -286,6 +287,9 @@ final class OverlayController {
 
     private func handleGlobal(_ event: NSEvent) {
         updateIgnoreMouseEvents()
+        if event.type == .mouseMoved {
+            handleHover()
+        }
         if event.type == .leftMouseDown {
             let over = containsScreenPoint(NSEvent.mouseLocation)
             if !over, mode.mode != .cluster {
@@ -298,6 +302,9 @@ final class OverlayController {
     private func handleLocal(_ event: NSEvent) -> NSEvent? {
         updateIgnoreMouseEvents()
         switch event.type {
+        case .mouseMoved:
+            handleHover()
+            return event
         case .leftMouseDown:
             return handleMouseDown(event)
         case .leftMouseDragged:
@@ -317,6 +324,22 @@ final class OverlayController {
             return event
         default:
             return event
+        }
+    }
+
+    private func handleHover() {
+        guard drag == nil, NSEvent.pressedMouseButtons == 0 else { return }
+        switch mode.mode {
+        case .active, .focus:
+            break
+        case .cluster:
+            return
+        }
+        guard let panel, let rootView, panel.isVisible else { return }
+        let windowPoint = panel.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let point = rootView.convert(windowPoint, from: nil)
+        if case .marble(let id) = rootView.hitTestKind(at: point) {
+            mode.hoverMarble(id)
         }
     }
 
@@ -408,6 +431,11 @@ final class OverlayController {
         let over = containsScreenPoint(NSEvent.mouseLocation)
         let dragging = drag?.moved == true
         panel.ignoresMouseEvents = !(over || dragging)
+    }
+
+    private var prefersReducedMotion: Bool {
+        PrefsStore.shared.values.reducedMotion
+            || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 }
 

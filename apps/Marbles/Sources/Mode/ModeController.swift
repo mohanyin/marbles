@@ -42,15 +42,24 @@ final class ModeController {
         }
     }
 
-    /// Active chrome / desktop → Cluster. Focus chrome / desktop → Active.
-    func clickOutside() {
+    /// Active hover opens Focus. Focus hover on another marble switches. Cluster stays put.
+    func hoverMarble(_ id: AgentID) {
         switch mode {
         case .cluster:
             break
         case .active:
+            set(.focus(id))
+        case .focus(let current):
+            if current != id {
+                set(.focus(id))
+            }
+        }
+    }
+
+    /// Desktop / empty chrome always packs back to Cluster.
+    func clickOutside() {
+        if mode != .cluster {
             set(.cluster)
-        case .focus:
-            set(.active)
         }
     }
 

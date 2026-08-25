@@ -5,7 +5,11 @@ enum IngestConstants {
     static let supportDirectoryName = "Marbles"
     static let ingestFileName = "ingest.json"
     static let seedsFileName = "seeds.json"
+    static let prefsFileName = "prefs.json"
     static let linger: TimeInterval = 45
+    static let toolDwell: TimeInterval = 0.5
+    static let maxQueuedTools = 6
+    static let previewLimit = 8_000
     static let hookLabelHeader = "X-Marbles-Hook"
 
     struct PublishedTarget {
@@ -25,6 +29,10 @@ enum IngestConstants {
 
     static var seedsFileURL: URL {
         applicationSupport.appendingPathComponent(seedsFileName)
+    }
+
+    static var prefsFileURL: URL {
+        applicationSupport.appendingPathComponent(prefsFileName)
     }
 
     static func defaultURL(port: Int = defaultPort) -> URL {

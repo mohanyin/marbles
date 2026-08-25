@@ -201,13 +201,14 @@ Mode transitions animate `MarbleFrame` (center, size, z, dim) with an interrupti
           click marble / chip / +N
   Cluster ─────────────────────────────────────► Active
      ▲                                            │
-     │ Esc / click outside / drag-to-snap*        │ click marble
+     │ Esc / click outside / drag-to-snap*        │ hover marble
+     │ click outside from Focus                   │
      └──────────────────────────────────────────  │
                                                   ▼
                                                Focus
                                                   │
-          Esc / click outside / click hero ───────┘  → Active
-          click other marble while focused          → Focus(other)
+          Esc / click hero ───────────────────────┘  → Active
+          hover other marble while focused          → Focus(other)
 ```
 
 \* Starting a drag (≥4pt slop) **collapses to Cluster first**, then snaps. A click under 4pt of movement is a click, not a drag.
@@ -228,8 +229,9 @@ Rules:
 - Cluster click → `.active` (do not skip to Focus in v1).
 - Fast Cluster → marble click must **interrupt** the unpack and land on `.focus`. Other marbles snap to their Active targets, then the non-hero dim (see §10.3 `dim`).
 - `Esc` is handled at the panel. Focus `Esc` → Active. Active `Esc` → Cluster.
-- Click the focused hero marble → Active. Click a different marble in Focus → switch Focus.
-- Click outside the popover passes through and dismisses to Active.
+- Hover a marble in Active → `.focus`. Hover a different marble in Focus → switch Focus. Hovering the hero does not leave.
+- Click the focused hero marble → Active. Click a different marble in Focus → switch Focus (same as hover).
+- Click outside the popover or empty chrome always packs to Cluster, from Active or Focus.
 - `OverlayMode` lives in Mode/. `Agent` types live in Agents/.
 
 ### 7.4 Placement and snap
@@ -338,13 +340,13 @@ struct OverflowToken: Equatable {
 | --- | --- |
 | `SessionStart` | Upsert by `session_id`. `source` from payload `source` / `matcher`: `resume`/`compact` **revives** the same id (keep seed, latticeIndex, animationTime; clear currentTool; status `idle` until a prompt). `startup`/`fork`/`clear` = new turn history, same id if reused. |
 | `UserPromptSubmit` | `turnOpen = true`, `status = thinking`, `sessionEndedAt = nil`, resume `animationTime` (do not zero). |
-| `PreToolUse` | Set `currentTool` phase `started`; `status = working`. Extract summary per §11.4. |
-| `PostToolUse` | Current tool → `succeeded`, push onto `recentTools`, clear `currentTool`; `status = thinking` if `turnOpen` else `finished`. |
+| `PreToolUse` | Show as `currentTool` phase `started`, `status = working`. If a chip is already live, enqueue (FIFO, cap 6). Extract summary per §11.4. Each live chip stays on screen **at least 500ms**. |
+| `PostToolUse` | Mark the first in-flight tool `succeeded`. Keep it as the live chip until the 500ms dwell elapses, then show the next queued tool (also ≥500ms) or, if the queue is empty and `turnOpen`, `status = thinking`. Push onto `recentTools` when it leaves the live slot. `Stop` / `SessionEnd` clear immediately. |
 | `PostToolUseFailure` | Same as post but phase `failed`. **Does not** set `error` (chip only). |
 | `PermissionRequest` / needs-you `Notification` | `status = waitingOnUser`. |
 | `Notification` `agent_completed` | Same as `Stop`. |
-| `Stop` | `turnOpen = false`, `status = finished`, store preview, **start bloom** (skip if already `error`). |
-| `StopFailure` | `turnOpen = false`, `status = error`, store preview, **no bloom**, ease `errorHue` on. |
+| `Stop` | `turnOpen = false`, `status = finished`, store preview from the transcript’s latest assistant **text** block (not thinking). Hook `last_assistant_message` is fallback only. **Start bloom** (skip if already `error`). |
+| `StopFailure` | `turnOpen = false`, `status = error`, store preview as on `Stop`, **no bloom**, ease `errorHue` on. |
 | `SubagentStart` | Append `SubagentRecord`. If a `Task` tool is in flight for the same spawn, keep the satellite and drop the extra Task chip. |
 | `SubagentStop` | Remove that id from `subagents`. |
 | `SessionEnd` | `sessionEndedAt = now`. Reason ∈ {process crash, `error`, non-zero, `prompt_input_exit` after `StopFailure`} → `error`; else keep `finished` or set `finished`. Linger **45s** then fade 300ms and remove. |
@@ -391,7 +393,7 @@ Starting values (tune, then lock in tests): `spacingX = 20`, `spacingY = 17`, `s
 
 ### 9.2 Active line
 
-Place visible agents by ascending `latticeIndex` (then hidden/overflowed agents after, for the full list). Size **60pt**. **No** permanent captions. Hover (Active only): chip + one-line status using the Focus copy table (§12.1).
+Place visible agents by ascending `latticeIndex` (then hidden/overflowed agents after, for the full list). Size **60pt**. **No** permanent captions. Hovering a marble in Active opens Focus; hovering another marble while focused switches so a line can be scanned.
 
 ### 9.3 Hit testing
 
@@ -579,10 +581,10 @@ Ingest decodes Claude stdin with `JSONDecoder.keyDecodingStrategy = .convertFrom
 | `hook_event_name` | `hookEventName` | Dispatch |
 | `session_id` or Cursor `conversation_id` | `sessionID` | Required; drop event if both missing |
 | `cwd` | `cwd` | Jump-in, Conductor detect |
-| `transcript_path` | `transcriptPath` | Dedupe vs jsonl only; do not read body on the hot path |
+| `transcript_path` | `transcriptPath` | On `Stop`, read the jsonl **tail** for the latest assistant text block. Do not read on tool events. |
 | `tool_name` | `toolName` | Chips |
 | `tool_input` | `toolInputSummary` | Extract only: Read/Edit/Write → basename of `file_path`; Bash/Shell → first 40 chars of `command`; else omit. Max **80** chars. Never persist the object. |
-| `last_assistant_message` | `lastAssistantMessage` | Trust on `Stop` / `StopFailure` / `SubagentStop` only |
+| `last_assistant_message` | `lastAssistantMessage` | **Do not** show as Focus copy for Claude — it is often a one-line paraphrase. Preview comes from the jsonl tail. Cursor may still use `text` when no transcript exists. |
 | `notification_type` or `type` | `notificationType` | See Claude Notification matchers |
 | `agent_id` / `agent_type` | `agentID` / `agentType` | Subagents |
 | `reason` / `source` | `sessionEndReason` / `sessionStartSource` | `startup`, `resume`, `clear`, `compact`, `fork`; end: `clear`, `resume`, `logout`, `prompt_input_exit`, `other` |
@@ -609,7 +611,7 @@ struct HookEvent: Codable {
 }
 ```
 
-**Preview text:** memory only, max 280 characters. Never persist `user_email`.
+**Preview text:** memory only, max 8000 characters. Prefer the latest `type=assistant` text block from the jsonl tail on `Stop`; hook `last_assistant_message` is often a one-line paraphrase. Never persist `user_email`.
 
 ### 11.4.1 Cursor event map
 
@@ -622,7 +624,7 @@ Ingest detects Cursor payloads by `hook_event_name` camelCase (`sessionStart`, `
 | `beforeSubmitPrompt` | `UserPromptSubmit` | |
 | `preToolUse` / `postToolUse` / `postToolUseFailure` | same | Map tool names: `Shell`→Bash chip, `Write` covers Edit. Cursor `MCP: foo` → mcp chip. |
 | `afterAgentThought` | thinking | `status = thinking` if `turnOpen` and no current tool. Do not store `text`. |
-| `afterAgentResponse` | preview | First 280 chars of `text` → `lastAssistantPreview`. |
+| `afterAgentResponse` | preview | `text` → `lastAssistantPreview` (cap 8000). Transcript tail wins when present. |
 | `stop` | `Stop` or `StopFailure` | `status == error` → error (no bloom). `completed` / `aborted` → finished + bloom. |
 | `subagentStart` / `subagentStop` | same | |
 | Tab / `workspaceOpen` | ignore | Helper may still POST; Ingest drops. |
@@ -660,7 +662,7 @@ Cursor jump-in: activate the Cursor app and, if possible, the workspace in `work
 
 Disabled (not hidden) when the app is missing or `cwd`/`pid` is nil, with tooltip: “Claude Code isn’t installed”, “No working directory”, “Can’t find this terminal”.
 
-Preview line: PRD precedence (waiting → tool → assistant → status word). Max 3 lines, 280 chars, 13pt.
+Preview: PRD precedence (waiting → tool → assistant → status word). Scrollable, 13pt, cap 8000 chars. Not a full transcript.
 
 Return does not jump-in. Esc always dismisses Focus.
 
@@ -787,7 +789,7 @@ Founder look-path after every stream (put this in the PR description):
 | **W2** | AgentStore + Ingest + helper | Fake + live events update status | W0 | Debug inject changes status. `curl` a fixture at `:17832/hook` **with `X-Marbles-Token` from ingest.json** updates a marble; the same POST without the token is `401` and does not change the pile. Optional: install hooks and run a real Claude **or** Cursor Agent turn and watch a marble appear. |
 | **W3** | Chips + motion + bloom + error hue | Works against dummy *or* live store | W1, W2 | Working swirls (even with placeholder spheres). Finished freezes + caustic sweep. Error goes **red** without cracks. Thinking vs tool chips readable at 36pt. |
 | **W4** | Metal + Identity | Reference look at 36pt | W1 | Six families vs [the still](references/marble-visual-reference.png). Same marble on a white Google Doc **and** a dark desktop. Debug cycle seeds. No black plate. |
-| **W5** | Focus popover + preview | Actions disabled until W6 | W1, W2 | Preview copy order (waiting / tool / text). Click hero to leave. Click another marble to switch. Card stays on-screen at every snap. |
+| **W5** | Focus popover + preview | Actions disabled until W6 | W1, W2 | Preview copy order (waiting / tool / text). Hover a marble to enter / switch Focus. Click hero to leave to Active. Click outside packs to Cluster. Card stays on-screen at every snap. |
 | **W6** | Jump-in adapters | Claude Code / Cursor / Terminal / Conductor | W5 | Each visible button opens the right **app**. Cursor-sourced marbles show Open Cursor, not Claude Code. |
 | **W7** | Hook installer + demo + prefs | Repair / undo both configs | W2 | First-run checklist. Demo marble if empty. Confirm `~/.claude/settings.json` **and** `~/.cursor/hooks.json` contain `marbles-hook`. Undo removes only ours. Reduced motion snaps. |
 | **W8** | Packaging | cask / install.sh / notarize | W7 | Clean machine / other account: install in <5 min, see a marble. |

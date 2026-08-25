@@ -9,6 +9,9 @@ enum FocusPreviewTests {
         toolLines()
         truncatesLongAssistant()
         actionsFollowSource()
+        showsSessionTitle()
+        latestAssistantSkipsThinking()
+        expandsTildeInTranscriptPath()
     }
 
     private static func waitingBeatsTool() {
@@ -43,10 +46,10 @@ enum FocusPreviewTests {
     }
 
     private static func truncatesLongAssistant() {
-        let text = String(repeating: "a", count: 400)
+        let text = String(repeating: "a", count: IngestConstants.previewLimit + 50)
         let agent = Agent.make(id: "long", source: .cli, status: .thinking, lastAssistantPreview: text)
         let line = FocusPreview.line(for: agent)
-        TestRun.expect(line.count <= FocusPreview.maxCharacters, "≤280 chars")
+        TestRun.expect(line.count <= FocusPreview.maxCharacters, "capped")
         TestRun.expect(line.hasSuffix("…"), "ellipsis")
     }
 
@@ -65,5 +68,33 @@ enum FocusPreviewTests {
             conductorWorkspaceID: "ws"
         ))
         TestRun.expect(conductor.showConductor, "conductor cwd shows Open Conductor")
+    }
+
+    private static func showsSessionTitle() {
+        var agent = Agent.make(id: "titled", source: .cli, status: .working, title: "Glass orb effect with image distortion")
+        TestRun.expectEqual(FocusPreview.title(for: agent), "Glass orb effect with image distortion")
+        TestRun.expectEqual(FocusPreview.line(for: agent), "Working…")
+        agent.title = "  "
+        TestRun.expect(FocusPreview.title(for: agent) == nil, "blank title hides")
+    }
+
+    private static func latestAssistantSkipsThinking() {
+        let jsonl = """
+        {"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"I'm considering whether NSVisualEffectView supports a"}]}}
+        {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Not out of the box — NSVisualEffectView applies one uniform blur strength across its whole bounds."}]}}
+        """
+        let text = TranscriptPeek.latestAssistantText(data: Data(jsonl.utf8))
+        TestRun.expectEqual(text, "Not out of the box — NSVisualEffectView applies one uniform blur strength across its whole bounds.")
+        TestRun.expect(!(text ?? "").contains("I'm considering"), "thinking is not the preview")
+    }
+
+    private static func expandsTildeInTranscriptPath() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = TranscriptPeek.resolvedPath(
+            sessionID: "no-such-session",
+            cwd: nil,
+            explicit: "~/.claude/projects/fake/no-such-session.jsonl"
+        )
+        TestRun.expectEqual(path, "\(home)/.claude/projects/fake/no-such-session.jsonl")
     }
 }

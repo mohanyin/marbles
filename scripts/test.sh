@@ -21,12 +21,17 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Agents/IngestConstants.swift" \
   "$SRC/Agents/HookEvent.swift" \
   "$SRC/Agents/HookMapper.swift" \
+  "$SRC/Agents/TranscriptPeek.swift" \
   "$SRC/Agents/SeedStore.swift" \
   "$SRC/Agents/AgentStore.swift" \
   "$SRC/Ingest/IngestAuth.swift" \
   "$SRC/Motion/MotionEngine.swift" \
   "$SRC/Chips/Chips.swift" \
   "$SRC/Focus/FocusPreview.swift" \
+  "$SRC/Hooks/JSONC.swift" \
+  "$SRC/Hooks/Hooks.swift" \
+  "$SRC/Persistence/PrefsStore.swift" \
+  "$SRC/Demo/DemoMarble.swift" \
   "$SRC/Mode/ModeController.swift" \
   "$SRC/Layout/SnapGeometry.swift" \
   "$SRC/Layout/LayoutEngine.swift" \
@@ -39,6 +44,8 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$TESTS/MotionTests.swift" \
   "$TESTS/IdentityTests.swift" \
   "$TESTS/FocusPreviewTests.swift" \
+  "$TESTS/HooksMergeTests.swift" \
+  "$TESTS/DemoTests.swift" \
   "$TESTS/main.swift"
 
 "$OUT"

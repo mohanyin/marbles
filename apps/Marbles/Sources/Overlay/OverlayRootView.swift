@@ -13,6 +13,7 @@ final class OverlayRootView: NSView {
     var agentsByID: [AgentID: Agent] = [:]
     /// Active/Focus: clicks on empty panel chrome dismiss instead of falling through.
     var capturesEmptyClicks = false
+    var reducedMotion = false
     private var currentMode: OverlayMode = .cluster
 
     override var isFlipped: Bool { false }
@@ -68,7 +69,7 @@ final class OverlayRootView: NSView {
             view.marbleSize = frame.size
             view.dim = frame.dim
             view.now = Date()
-            view.reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            view.reducedMotion = reducedMotion
             view.frame = rect(for: frame)
             let glass = glassViews[id] ?? MarbleGlassDisc(frame: .zero)
             if glassViews[id] == nil {

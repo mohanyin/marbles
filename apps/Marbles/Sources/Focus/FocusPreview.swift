@@ -1,7 +1,13 @@
 import Foundation
 
 enum FocusPreview {
-    static let maxCharacters = 280
+    static let maxCharacters = IngestConstants.previewLimit
+
+    static func title(for agent: Agent) -> String? {
+        if agent.isDemo { return "Demo." }
+        let value = agent.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (value?.isEmpty == false) ? value : nil
+    }
 
     static func line(for agent: Agent) -> String {
         if agent.status == .waitingOnUser {

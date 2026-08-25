@@ -25,7 +25,7 @@ enum LayoutEngine {
     static let spacingY: CGFloat = 17
     static let spacingZ: CGFloat = 14
     static let lineStride: CGFloat = 68
-    static let focusCardSize = CGSize(width: 320, height: 176)
+    static let focusCardSize = CGSize(width: 360, height: 308)
     static let dimmed: CGFloat = 0.45
     /// Rightmost cell on the front / top lattice layer (x:2, y:0, z:0).
     static let overflowLatticeIndex = 2

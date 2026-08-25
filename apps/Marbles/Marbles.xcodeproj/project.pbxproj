@@ -39,6 +39,13 @@
 		A1000000000000000000001E /* FocusPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* FocusPreview.swift */; };
 		A1000000000000000000001F /* FocusCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* FocusCardView.swift */; };
 		A10000000000000000000021 /* MarbleGlassDisc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002A /* MarbleGlassDisc.swift */; };
+		A10000000000000000000022 /* JSONC.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002B /* JSONC.swift */; };
+		A10000000000000000000023 /* Hooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002C /* Hooks.swift */; };
+		A10000000000000000000024 /* PrefsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002D /* PrefsStore.swift */; };
+		A10000000000000000000025 /* DemoMarble.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002E /* DemoMarble.swift */; };
+		A10000000000000000000026 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002F /* LoginItem.swift */; };
+		A10000000000000000000028 /* TranscriptPeek.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* TranscriptPeek.swift */; };
+		A10000000000000000000027 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* ServiceManagement.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -74,6 +81,13 @@
 		A20000000000000000000027 /* FocusPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPreview.swift; sourceTree = "<group>"; };
 		A20000000000000000000028 /* FocusCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusCardView.swift; sourceTree = "<group>"; };
 		A2000000000000000000002A /* MarbleGlassDisc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarbleGlassDisc.swift; sourceTree = "<group>"; };
+		A2000000000000000000002B /* JSONC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONC.swift; sourceTree = "<group>"; };
+		A2000000000000000000002C /* Hooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hooks.swift; sourceTree = "<group>"; };
+		A2000000000000000000002D /* PrefsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrefsStore.swift; sourceTree = "<group>"; };
+		A2000000000000000000002E /* DemoMarble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoMarble.swift; sourceTree = "<group>"; };
+		A2000000000000000000002F /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
+		A20000000000000000000032 /* TranscriptPeek.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptPeek.swift; sourceTree = "<group>"; };
+		A20000000000000000000031 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		A20000000000000000000007 /* Marbles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Marbles.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Marbles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marbles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -85,6 +99,7 @@
 			files = (
 				A1000000000000000000001C /* Metal.framework in Frameworks */,
 				A1000000000000000000001D /* MetalKit.framework in Frameworks */,
+				A10000000000000000000027 /* ServiceManagement.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -115,6 +130,9 @@
 				A4000000000000000000000C /* Identity */,
 				A4000000000000000000000D /* Render */,
 				A40000000000000000000010 /* Focus */,
+				A40000000000000000000011 /* Hooks */,
+				A40000000000000000000012 /* Persistence */,
+				A40000000000000000000013 /* Demo */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -125,6 +143,7 @@
 				A20000000000000000000001 /* MarblesApp.swift */,
 				A20000000000000000000002 /* StatusItemController.swift */,
 				A20000000000000000000003 /* PreferencesView.swift */,
+				A2000000000000000000002F /* LoginItem.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -149,6 +168,7 @@
 				A20000000000000000000020 /* FixtureFiles.swift */,
 				A20000000000000000000016 /* HookEvent.swift */,
 				A20000000000000000000017 /* HookMapper.swift */,
+				A20000000000000000000032 /* TranscriptPeek.swift */,
 				A20000000000000000000018 /* IngestConstants.swift */,
 				A20000000000000000000019 /* SeedStore.swift */,
 				A2000000000000000000001A /* AgentStore.swift */,
@@ -197,6 +217,31 @@
 				A2000000000000000000001F /* ChipView.swift */,
 			);
 			path = Chips;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000011 /* Hooks */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000002B /* JSONC.swift */,
+				A2000000000000000000002C /* Hooks.swift */,
+			);
+			path = Hooks;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000012 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000002D /* PrefsStore.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000013 /* Demo */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000002E /* DemoMarble.swift */,
+			);
+			path = Demo;
 			sourceTree = "<group>";
 		};
 		A40000000000000000000010 /* Focus */ = {
@@ -347,6 +392,12 @@
 				A1000000000000000000001E /* FocusPreview.swift in Sources */,
 				A1000000000000000000001F /* FocusCardView.swift in Sources */,
 				A10000000000000000000021 /* MarbleGlassDisc.swift in Sources */,
+				A10000000000000000000022 /* JSONC.swift in Sources */,
+				A10000000000000000000023 /* Hooks.swift in Sources */,
+				A10000000000000000000024 /* PrefsStore.swift in Sources */,
+				A10000000000000000000025 /* DemoMarble.swift in Sources */,
+				A10000000000000000000026 /* LoginItem.swift in Sources */,
+				A10000000000000000000028 /* TranscriptPeek.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

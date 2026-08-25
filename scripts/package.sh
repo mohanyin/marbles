@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Build and launch Marbles without Xcode (useful when xcodebuild plugins are broken).
+# Build a launchable Marbles.app into dist/ (no Debug menu).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/apps/Marbles/Sources"
-OUT="$ROOT/apps/Marbles/build/Marbles.app"
+OUT="$ROOT/dist/Marbles.app"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 TARGET="arm64-apple-macos14.0"
 
 rm -rf "$OUT"
-mkdir -p "$OUT/Contents/MacOS"
+mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources" "$OUT/Contents/Helpers"
 
 cat > "$OUT/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -42,21 +42,19 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-mkdir -p "$OUT/Contents/Resources" "$ROOT/apps/Marbles/build"
 cp "$ROOT/apps/Marbles/Resources/Shaders/Marble.metal" "$OUT/Contents/Resources/Marble.metal"
 if xcrun -sdk macosx metal -c "$ROOT/apps/Marbles/Resources/Shaders/Marble.metal" \
-  -o "$ROOT/apps/Marbles/build/Marble.air" -mmacosx-version-min=14.0 2>/dev/null
+  -o "$ROOT/dist/Marble.air" -mmacosx-version-min=14.0 2>/dev/null
 then
-  xcrun -sdk macosx metallib "$ROOT/apps/Marbles/build/Marble.air" \
+  xcrun -sdk macosx metallib "$ROOT/dist/Marble.air" \
     -o "$OUT/Contents/Resources/default.metallib" 2>/dev/null || true
 fi
 
-xcrun swiftc -parse-as-library -O -DDEBUG -sdk "$SDK" -target "$TARGET" \
+xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   -framework AppKit -framework SwiftUI -framework Network -framework Metal -framework MetalKit -framework ServiceManagement \
   -o "$OUT/Contents/MacOS/Marbles" \
   $(find "$SRC" -name '*.swift' | sort)
 
-mkdir -p "$OUT/Contents/Helpers"
 xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
   -framework Security \
   -o "$OUT/Contents/Helpers/marbles-hook" \
@@ -64,7 +62,6 @@ xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Ingest/IngestAuth.swift" \
   "$ROOT/tools/marbles-hook/main.swift"
 
-pkill -x Marbles 2>/dev/null || true
-open "$OUT"
-echo "Launched $OUT"
-echo "Ingest POST http://127.0.0.1:17832/hook with X-Marbles-Token from ~/Library/Application Support/Marbles/ingest.json"
+ditto -c -k --keepParent "$OUT" "$ROOT/dist/Marbles.zip"
+echo "Built $OUT"
+echo "Zipped $ROOT/dist/Marbles.zip"
