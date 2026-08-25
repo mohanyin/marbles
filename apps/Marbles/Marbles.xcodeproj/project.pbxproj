@@ -19,6 +19,13 @@
 		A1000000000000000000000A /* SnapGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* SnapGeometry.swift */; };
 		A1000000000000000000000B /* LayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* LayoutEngine.swift */; };
 		A1000000000000000000000C /* PlaceholderMarbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* PlaceholderMarbleView.swift */; };
+		A1000000000000000000000D /* HookEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* HookEvent.swift */; };
+		A1000000000000000000000E /* HookMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* HookMapper.swift */; };
+		A1000000000000000000000F /* IngestConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* IngestConstants.swift */; };
+		A10000000000000000000010 /* SeedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SeedStore.swift */; };
+		A10000000000000000000011 /* AgentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* AgentStore.swift */; };
+		A10000000000000000000012 /* IngestServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* IngestServer.swift */; };
+		A10000000000000000000013 /* IngestAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* IngestAuth.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +41,13 @@
 		A20000000000000000000013 /* SnapGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapGeometry.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* LayoutEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngine.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* PlaceholderMarbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderMarbleView.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* HookEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookEvent.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* HookMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookMapper.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* IngestConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestConstants.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* SeedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedStore.swift; sourceTree = "<group>"; };
+		A2000000000000000000001A /* AgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStore.swift; sourceTree = "<group>"; };
+		A2000000000000000000001B /* IngestServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestServer.swift; sourceTree = "<group>"; };
+		A2000000000000000000001C /* IngestAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestAuth.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* Marbles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Marbles.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Marbles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marbles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -66,6 +80,7 @@
 				A40000000000000000000007 /* Mode */,
 				A40000000000000000000008 /* Layout */,
 				A40000000000000000000004 /* Overlay */,
+				A40000000000000000000009 /* Ingest */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -96,6 +111,11 @@
 			children = (
 				A20000000000000000000010 /* Models.swift */,
 				A20000000000000000000011 /* AgentRoster.swift */,
+				A20000000000000000000016 /* HookEvent.swift */,
+				A20000000000000000000017 /* HookMapper.swift */,
+				A20000000000000000000018 /* IngestConstants.swift */,
+				A20000000000000000000019 /* SeedStore.swift */,
+				A2000000000000000000001A /* AgentStore.swift */,
 			);
 			path = Agents;
 			sourceTree = "<group>";
@@ -115,6 +135,15 @@
 				A20000000000000000000014 /* LayoutEngine.swift */,
 			);
 			path = Layout;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000009 /* Ingest */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000001B /* IngestServer.swift */,
+				A2000000000000000000001C /* IngestAuth.swift */,
+			);
+			path = Ingest;
 			sourceTree = "<group>";
 		};
 		A40000000000000000000005 /* Products */ = {
@@ -205,6 +234,13 @@
 				A1000000000000000000000A /* SnapGeometry.swift in Sources */,
 				A1000000000000000000000B /* LayoutEngine.swift in Sources */,
 				A1000000000000000000000C /* PlaceholderMarbleView.swift in Sources */,
+				A1000000000000000000000D /* HookEvent.swift in Sources */,
+				A1000000000000000000000E /* HookMapper.swift in Sources */,
+				A1000000000000000000000F /* IngestConstants.swift in Sources */,
+				A10000000000000000000010 /* SeedStore.swift in Sources */,
+				A10000000000000000000011 /* AgentStore.swift in Sources */,
+				A10000000000000000000012 /* IngestServer.swift in Sources */,
+				A10000000000000000000013 /* IngestAuth.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

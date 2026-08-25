@@ -46,14 +46,36 @@ final class PlaceholderMarbleView: NSView {
         highlight.fill()
         NSGraphicsContext.restoreGraphicsState()
 
-        NSColor.white.withAlphaComponent(0.55).setStroke()
-        path.lineWidth = 1
+        statusColor(for: agent.status).setStroke()
+        path.lineWidth = agent.status == .idle ? 1 : 2.5
         path.stroke()
+
+        if agent.status == .error {
+            NSColor.systemRed.withAlphaComponent(0.35).setFill()
+            path.fill()
+        }
     }
 
     private func color(for seed: UInt64) -> NSColor {
         let hue = CGFloat(seed % 360) / 360
         return NSColor(calibratedHue: hue, saturation: 0.48, brightness: 0.86, alpha: 0.94)
+    }
+
+    private func statusColor(for status: AgentStatus) -> NSColor {
+        switch status {
+        case .idle:
+            return NSColor.white.withAlphaComponent(0.55)
+        case .working:
+            return NSColor.systemOrange
+        case .thinking:
+            return NSColor.systemBlue
+        case .waitingOnUser:
+            return NSColor.systemYellow
+        case .finished:
+            return NSColor.systemGreen
+        case .error:
+            return NSColor.systemRed
+        }
     }
 }
 

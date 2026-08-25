@@ -69,7 +69,14 @@ final class StatusItemController {
         debug.addItem(item("Set selected → Error", #selector(statusError)))
         debug.addItem(item("Cycle current tool", #selector(cycleTool)))
         debug.addItem(.separator())
-        debug.addItem(item("Reset to 3 dummies", #selector(clearInjected)))
+        debug.addItem(item("Replay SessionStart fixture", #selector(replayStart)))
+        debug.addItem(item("Replay UserPrompt fixture", #selector(replayPrompt)))
+        debug.addItem(item("Replay PreToolUse fixture", #selector(replayTool)))
+        debug.addItem(item("Replay Stop fixture", #selector(replayStop)))
+        debug.addItem(item("Replay StopFailure fixture", #selector(replayFail)))
+        debug.addItem(item("Replay Cursor SessionStart", #selector(replayCursor)))
+        debug.addItem(.separator())
+        debug.addItem(item("Clear all injected", #selector(clearInjected)))
         let debugItem = NSMenuItem(title: "Debug", action: nil, keyEquivalent: "")
         debugItem.submenu = debug
         menu.addItem(debugItem)
@@ -125,11 +132,17 @@ final class StatusItemController {
     @objc private func inject9() { overlay.injectDebugAgents(count: 9) }
     @objc private func inject27() { overlay.injectDebugAgents(count: 27) }
     @objc private func inject28() { overlay.injectDebugAgents(count: 28) }
-    @objc private func clearInjected() { overlay.clearDebugAgents() }
+    @objc private func clearInjected() { overlay.clearInjectedAgents() }
     @objc private func statusWorking() { overlay.setSelectedStatus(.working) }
     @objc private func statusThinking() { overlay.setSelectedStatus(.thinking) }
     @objc private func statusWaiting() { overlay.setSelectedStatus(.waitingOnUser) }
     @objc private func statusFinished() { overlay.setSelectedStatus(.finished) }
     @objc private func statusError() { overlay.setSelectedStatus(.error) }
     @objc private func cycleTool() { overlay.cycleSelectedTool() }
+    @objc private func replayStart() { overlay.replayFixture(named: "session-start") }
+    @objc private func replayPrompt() { overlay.replayFixture(named: "user-prompt") }
+    @objc private func replayTool() { overlay.replayFixture(named: "pre-tool-use") }
+    @objc private func replayStop() { overlay.replayFixture(named: "stop") }
+    @objc private func replayFail() { overlay.replayFixture(named: "stop-failure") }
+    @objc private func replayCursor() { overlay.replayFixture(named: "cursor-session-start") }
 }

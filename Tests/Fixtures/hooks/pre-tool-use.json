@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "review-session",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/Users/mohan/Development/marbles-v2/apps/Marbles/Sources/Agents/AgentStore.swift"
+  }
+}

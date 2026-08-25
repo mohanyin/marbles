@@ -6,6 +6,9 @@ struct MarblesTestRunner {
     static func main() {
         LayoutTests.run()
         ModeTests.run()
+        StatusTests.run()
+        HookMapperTests.run()
+        IngestAuthTests.run()
         if TestRun.failures > 0 {
             print("\(TestRun.failures) test(s) failed")
             exit(1)

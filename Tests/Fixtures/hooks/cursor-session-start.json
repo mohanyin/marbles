@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "sessionStart",
+  "conversation_id": "cursor-review",
+  "cursor_version": "1.0.0",
+  "composer_mode": "agent",
+  "cwd": "/Users/mohan/Development/marbles-v2"
+}

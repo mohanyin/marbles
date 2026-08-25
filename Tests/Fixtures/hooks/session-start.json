@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "SessionStart",
+  "session_id": "review-session",
+  "cwd": "/Users/mohan/Development/marbles-v2",
+  "source": "startup"
+}

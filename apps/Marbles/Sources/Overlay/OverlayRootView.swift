@@ -62,11 +62,8 @@ final class OverlayRootView: NSView {
             focusCard.isHidden = false
             focusCard.frame = card
             let agent = agentsByID[id]
-            focusCard.title = agent.map { "Agent \($0.id)" } ?? "Agent"
-            let status = agent.map { String(describing: $0.status) } ?? ""
-            let preview = agent?.lastAssistantPreview ?? ""
-            let tool = agent?.currentTool.map { "Tool: \($0.name)" } ?? "No tool"
-            focusCard.detail = "W1 placeholder card.\n\(status)\n\(tool)\n\(preview)\nClick the hero marble to leave. Esc also works."
+            focusCard.title = agent.map { shortTitle($0) } ?? "Agent"
+            focusCard.detail = agent.map { focusCopy($0) } ?? ""
         } else {
             focusCard.isHidden = true
         }
@@ -122,6 +119,33 @@ final class OverlayRootView: NSView {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private func shortTitle(_ agent: Agent) -> String {
+        if agent.id.hasPrefix("debug-") { return "Dummy \(agent.id.dropFirst(6))" }
+        return String(agent.id.prefix(18))
+    }
+
+    private func focusCopy(_ agent: Agent) -> String {
+        let preview: String
+        if agent.status == .waitingOnUser {
+            preview = "Waiting for you"
+        } else if let tool = agent.currentTool {
+            let hint = tool.fileHint.map { " \($0)" } ?? ""
+            preview = "\(tool.name)\(hint)"
+        } else if let text = agent.lastAssistantPreview, !text.isEmpty {
+            preview = text
+        } else {
+            switch agent.status {
+            case .working: preview = "Working…"
+            case .thinking: preview = "Thinking…"
+            case .finished: preview = "Done"
+            case .error: preview = "Something went wrong"
+            case .idle: preview = "Idle"
+            case .waitingOnUser: preview = "Waiting for you"
+            }
+        }
+        return "\(preview)\n\(agent.source.rawValue) · \(String(describing: agent.status))"
+    }
 
     private func rect(for frame: MarbleFrame) -> NSRect {
         NSRect(

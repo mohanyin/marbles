@@ -46,6 +46,8 @@ Do **not** introduce Electron, a browser dashboard, a cloud backend, accounts, o
 
 **Trust boundary:** everything stays on localhost / the user’s home directory. The hook helper is the only process Claude Code launches. It must be readable, fast, and unable to block a tool call.
 
+Ingest is **not** an open localhost API. `POST /hook` requires a per-machine token stored in `ingest.json` (mode `0600`) and sent as `X-Marbles-Token`. That stops drive-by `curl` and browser-to-localhost posts. A process that can read the user’s Application Support can still impersonate the helper — same-user malware is out of scope. Preview text from hooks is untrusted UI copy (capped, never HTML).
+
 **Non-goals inherited from the PRD:** spawn/kill agents, full transcripts, remote fleets, Windows/Linux.
 
 ---
@@ -503,20 +505,26 @@ Chip size ~8–10pt on the rim at cluster scale. Thinking glyph ≠ tool glyph.
 **v1 default:** HTTP `POST http://127.0.0.1:17832/hook`  
 Fallback if bind fails: increment port and rewrite helper args via a small file:
 
-`~/Library/Application Support/Marbles/ingest.json` → `{ "url": "http://127.0.0.1:17833/hook" }`
+`~/Library/Application Support/Marbles/ingest.json` → `{ "url": "http://127.0.0.1:17833/hook", "token": "<64 hex chars>" }`
 
-Unix socket is a fine v1.1 swap; keep the JSON body identical.
+Bind **127.0.0.1 only**. Do not fall back to `0.0.0.0`.
 
-**Response:** `204` empty. Helper treats connection-refused as success (exit 0). Timeout ≤150ms.
+On first launch (or if `token` is missing / too short), generate 32 random bytes (`SecRandomCopyBytes`) and persist as hex. Reuse the existing token across relaunches so in-flight helpers do not race. File mode **0600**. Never log the token.
+
+**Auth:** require header `X-Marbles-Token` equal to `ingest.json`’s `token` (constant-time compare). Missing or wrong token → **401**, do not apply the body. `X-Marbles-Hook: 1` is a label only, not a secret.
+
+Unix socket is a fine v1.1 swap; keep the JSON body identical. The token still applies (header or equivalent).
+
+**Response:** `204` empty on success. Helper treats connection-refused **and** 401 as success (exit 0). Timeout ≤150ms.
 
 ### 11.2 Helper
 
 `marbles-hook` is **source-agnostic**:
 
 1. Read stdin to EOF (Claude or Cursor JSON).
-2. Optionally read `ingest.json` for URL.
-3. POST body = stdin bytes, header `Content-Type: application/json`, `X-Marbles-Hook: 1`.
-4. Exit 0 in all cases (including malformed stdin — still exit 0, optionally POST a `{ "parseError": true }`).
+2. Read `ingest.json` for `url` and `token` (every invocation).
+3. POST body = stdin bytes, headers `Content-Type: application/json`, `X-Marbles-Hook: 1`, `X-Marbles-Token: <token>`.
+4. Exit 0 in all cases (including malformed stdin — still exit 0, optionally POST a `{ "parseError": true }`). Never print the token.
 
 Never print to stdout (Claude may attach it on some events; Cursor may treat stdout as a hook response and loop). Log to `~/Library/Logs/Marbles/hook.log` only if `MARBLES_HOOK_DEBUG=1`.
 
@@ -702,11 +710,11 @@ Directory: `~/Library/Application Support/Marbles/`
 | `prefs.json` | `{ "version": 1, "reducedMotion": false, "completionSound": false, "satellites": true, "launchAtLogin": false, "overlayHidden": false }` |
 | `snap.json` | `{ "version": 1, "displays": { "<screenNumber>": { "snap": "bottomRight" } } }` |
 | `seeds.json` | `{ "version": 1, "seeds": { "<session_id>": "<hex u64>" } }` |
-| `ingest.json` | `{ "url": "http://127.0.0.1:17832/hook" }` |
+| `ingest.json` | `{ "url": "http://127.0.0.1:17832/hook", "token": "<64 hex chars>" }` mode `0600` |
 
 No transcript cache. Previews, cwd, pid, tool names live in memory only. `MARBLES_HOOK_DEBUG` logs are truncated to 2 KB/line, no stdin body, deleted after 24h.
 
-Port constant: `Agents/IngestConstants.swift` `static let defaultPort = 17832`. Helper always re-reads `ingest.json`. On upgrade, app rewrites the hook command path and `ingest.json`.
+Port constant: `Agents/IngestConstants.swift` `static let defaultPort = 17832`. Helper always re-reads `ingest.json` (url + token). On upgrade, app rewrites the hook command path and `ingest.json` **without rotating a valid existing token**.
 
 ---
 
@@ -739,7 +747,7 @@ Until notarized: README step “Open anyway” (right-click) — still part of t
 | `LayoutTests` | 8 snap orientations; corner → vertical; 36pt cluster / 60pt Active; sticky slots; 27 vs 28 overflow; linger counts. Run `./scripts/test.sh`. |
 | `StatusTests` | reducer table in §8; error vs finished vs waiting vs PostToolUseFailure |
 | `IdentityTests` | same seed ⇒ same params; family table over 100 seeds |
-| `HookContractTests` | helper exits 0 on refused connection and bad JSON; fixtures decode |
+| `HookContractTests` | helper exits 0 on refused connection and bad JSON; fixtures decode; ingest token match / reject |
 | `HooksMergeTests` | idempotent merge / undo; JSONC comments survive |
 | `MotionTests` | freeze holds `animationTime`; waiting uses `hold` not `freeze`; error skips bloom |
 | UI | click-through gaps; bloom ring not hittable; light desktop rim; error hue |
@@ -776,7 +784,7 @@ Founder look-path after every stream (put this in the PR description):
 | --- | --- | --- | --- | --- |
 | **W0** | Overlay panel + click-through | Empty floating panel, menu bar, pass-through hits | — | A small empty panel over Safari/Slack. Clicks on empty glass hit the app beneath. Drag the panel. Menu bar extra works. |
 | **W1** | Mode + Layout + snap | Dummy 3 agents; Cluster/Active/Focus; 8 snap points | W0 | Placeholders in a pile. Click pile → line. Click one → Focus card (can be ugly). Drag to all 8 snaps; corners expand **vertical**. Gaps click through. |
-| **W2** | AgentStore + Ingest + helper | Fake + live events update status | W0 | Debug inject changes status. `curl` a fixture at `:17832/hook` updates a marble. Optional: install hooks and run a real Claude **or** Cursor Agent turn and watch a marble appear. |
+| **W2** | AgentStore + Ingest + helper | Fake + live events update status | W0 | Debug inject changes status. `curl` a fixture at `:17832/hook` **with `X-Marbles-Token` from ingest.json** updates a marble; the same POST without the token is `401` and does not change the pile. Optional: install hooks and run a real Claude **or** Cursor Agent turn and watch a marble appear. |
 | **W3** | Chips + motion + bloom + error hue | Works against dummy *or* live store | W1, W2 | Working swirls (even with placeholder spheres). Finished freezes + caustic sweep. Error goes **red** without cracks. Thinking vs tool chips readable at 36pt. |
 | **W4** | Metal + Identity | Reference look at 36pt | W1 | Six families vs [the still](references/marble-visual-reference.png). Same marble on a white Google Doc **and** a dark desktop. Debug cycle seeds. No black plate. |
 | **W5** | Focus popover + preview | Actions disabled until W6 | W1, W2 | Preview copy order (waiting / tool / text). Click hero to leave. Click another marble to switch. Card stays on-screen at every snap. |
@@ -814,7 +822,7 @@ Suggested pairing: **W0→W1** and **W0→W2** in parallel after the panel exist
 | Freeze time | Hold last `animationTime` | Resume from pose |
 | Waiting | `hold=1`, not `freeze` | Mid-swirl, not “done” |
 | Window | `.accessory` + `statusBar` + join-all | No Dock; no `.stationary` |
-| Ingest | Local HTTP :17832 + helper | Simple hook `command` |
+| Ingest | Local HTTP :17832 + helper + `X-Marbles-Token` | Unauthenticated localhost POSTs must not mutate agents |
 | Reply | No keystroke injection | Safety |
 | Cursor agents | Native `~/.cursor/hooks.json`, same helper | Parallel API; don’t rely on third-party Claude import |
 | Cmd+K / Ask / Tab | Ignored | Avoid a marble per inline edit |

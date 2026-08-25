@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "StopFailure",
+  "session_id": "review-session",
+  "last_assistant_message": "The tool call failed."
+}

@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "review-session",
+  "last_assistant_message": "Updated AgentStore and the ingest listener."
+}

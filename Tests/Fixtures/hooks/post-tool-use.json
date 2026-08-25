@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "PostToolUse",
+  "session_id": "review-session",
+  "tool_name": "Edit"
+}

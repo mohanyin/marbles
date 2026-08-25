@@ -36,15 +36,23 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Marbles receives local status from Claude Code hooks on this Mac.</string>
 </dict>
 </plist>
 PLIST
 
 xcrun swiftc -parse-as-library -O -DDEBUG -sdk "$SDK" -target "$TARGET" \
-  -framework AppKit -framework SwiftUI \
+  -framework AppKit -framework SwiftUI -framework Network \
   -o "$OUT/Contents/MacOS/Marbles" \
   $(find "$SRC" -name '*.swift' | sort)
+
+mkdir -p "$OUT/Contents/Helpers"
+xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
+  -o "$OUT/Contents/Helpers/marbles-hook" \
+  "$ROOT/tools/marbles-hook/main.swift"
 
 pkill -x Marbles 2>/dev/null || true
 open "$OUT"
 echo "Launched $OUT"
+echo "Ingest POST http://127.0.0.1:17832/hook with X-Marbles-Token from ~/Library/Application Support/Marbles/ingest.json"

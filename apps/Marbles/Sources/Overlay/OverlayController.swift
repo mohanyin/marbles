@@ -3,8 +3,10 @@ import AppKit
 @MainActor
 final class OverlayController {
     var onVisibilityChange: ((Bool) -> Void)?
+    var ingestURL: URL = IngestConstants.defaultURL()
+    var ingestToken: String = ""
 
-    let roster = AgentRoster()
+    let store: AgentStore
     let mode = ModeController()
 
     private var panel: OverlayPanel?
@@ -30,10 +32,13 @@ final class OverlayController {
         return nil
     }
 
-    init() {
-        roster.replaceWithDebugDummies(count: 3)
+    init(store: AgentStore) {
+        self.store = store
         mode.onChange = { [weak self] _ in
             self?.scrollOffset = 0
+            self?.relayout(animated: true)
+        }
+        store.onChange = { [weak self] in
             self?.relayout(animated: true)
         }
     }
@@ -58,35 +63,53 @@ final class OverlayController {
     }
 
     func injectDebugAgents(count: Int) {
-        roster.replaceWithDebugDummies(count: count)
+        store.injectDebugAgents(count: count)
         mode.resetToCluster()
         scrollOffset = 0
-        relayout(animated: true)
     }
 
-    func clearDebugAgents() {
-        roster.replaceWithDebugDummies(count: 3)
+    func clearInjectedAgents() {
+        store.clearInjected()
         mode.resetToCluster()
         scrollOffset = 0
-        relayout(animated: true)
     }
 
     var selectedAgentID: AgentID? {
-        focusedID ?? roster.agents.first?.id
+        focusedID ?? store.agents.first?.id
     }
 
     func setSelectedStatus(_ status: AgentStatus) {
         if let id = selectedAgentID {
-            roster.setStatus(status, for: id)
-            relayout(animated: false)
+            store.setStatus(status, for: id)
         }
     }
 
     func cycleSelectedTool() {
         if let id = selectedAgentID {
-            roster.cycleTool(for: id)
-            relayout(animated: false)
+            store.cycleTool(for: id)
         }
+    }
+
+    func replayFixture(named name: String) {
+        guard let data = Self.fixtureData(named: name) else { return }
+        var request = URLRequest(url: ingestURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("1", forHTTPHeaderField: "X-Marbles-Hook")
+        request.setValue(ingestToken, forHTTPHeaderField: IngestAuth.headerName)
+        request.httpBody = data
+        URLSession.shared.dataTask(with: request).resume()
+    }
+
+    static func fixtureData(named name: String) -> Data? {
+        let file = "\(name).json"
+        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<6 {
+            let candidate = directory.appendingPathComponent("Tests/Fixtures/hooks").appendingPathComponent(file)
+            if let data = try? Data(contentsOf: candidate) { return data }
+            directory.deleteLastPathComponent()
+        }
+        return Bundle.main.url(forResource: name, withExtension: "json").flatMap { try? Data(contentsOf: $0) }
     }
 
     func containsScreenPoint(_ screenPoint: NSPoint) -> Bool {
@@ -125,7 +148,7 @@ final class OverlayController {
         let cardPositive = cardTowardPositive(snap: snap, panelOrigin: panel.frame.origin, panelSize: panel.frame.size, screen: screen)
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let target = LayoutEngine.layout(
-            agents: roster.agents,
+            agents: store.agents,
             mode: mode.mode,
             orientation: orientation,
             scrollOffset: scrollOffset,
@@ -159,7 +182,7 @@ final class OverlayController {
         panel.setFrame(NSRect(origin: origin, size: layout.panelSize), display: true)
         rootView.frame = NSRect(origin: .zero, size: layout.panelSize)
         rootView.capturesEmptyClicks = mode.mode != .cluster
-        rootView.apply(layout: layout, agents: roster.agents, focused: focusedID)
+        rootView.apply(layout: layout, agents: store.agents, focused: focusedID)
         currentLayout = layout
         updateIgnoreMouseEvents()
     }
