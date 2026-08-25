@@ -80,6 +80,20 @@ enum Chips {
         return items
     }
 
+    static func focusChips(for agent: Agent) -> [ChipKind] {
+        var items: [ChipKind] = []
+        if let live = clusterChip(for: agent) {
+            items.append(live)
+        }
+        for tool in agent.recentTools.prefix(3) {
+            let kind: ChipKind = tool.phase == .failed ? .toolFail : .tool(tool.name)
+            if !items.contains(kind) {
+                items.append(kind)
+            }
+        }
+        return Array(items.prefix(4))
+    }
+
     static func size(for marbleSize: CGFloat) -> CGFloat {
         if marbleSize <= 40 { return 18 }
         if marbleSize <= 64 { return 22 }

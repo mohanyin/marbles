@@ -25,7 +25,7 @@ enum LayoutEngine {
     static let spacingY: CGFloat = 17
     static let spacingZ: CGFloat = 14
     static let lineStride: CGFloat = 68
-    static let focusCardSize = CGSize(width: 280, height: 132)
+    static let focusCardSize = CGSize(width: 320, height: 176)
     static let dimmed: CGFloat = 0.45
     /// Rightmost cell on the front / top lattice layer (x:2, y:0, z:0).
     static let overflowLatticeIndex = 2
@@ -243,10 +243,14 @@ enum LayoutEngine {
 
         var card: CGRect?
         if let focused, let hero = frames[focused] {
-            card = cardFrame(
-                hero: hero,
+            card = clampCard(
+                cardFrame(
+                    hero: hero,
+                    axis: orientation.axis,
+                    towardPositive: cardTowardPositivePerpendicular
+                ),
                 axis: orientation.axis,
-                towardPositive: cardTowardPositivePerpendicular
+                viewport: viewport
             )
             minX = min(minX, card!.minX)
             minY = min(minY, card!.minY)
@@ -273,6 +277,19 @@ enum LayoutEngine {
             focusCardFrame: shiftedCard,
             panelSize: size
         )
+    }
+
+    private static func clampCard(_ card: CGRect, axis: LineAxis, viewport: CGFloat) -> CGRect {
+        var frame = card
+        switch axis {
+        case .vertical:
+            let maxY = max(inset, viewport - frame.height - inset)
+            frame.origin.y = min(max(frame.origin.y, inset), maxY)
+        case .horizontal:
+            let maxX = max(inset, viewport - frame.width - inset)
+            frame.origin.x = min(max(frame.origin.x, inset), maxX)
+        }
+        return frame
     }
 
     private static func cardFrame(hero: MarbleFrame, axis: LineAxis, towardPositive: Bool) -> CGRect {

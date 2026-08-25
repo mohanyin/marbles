@@ -36,6 +36,8 @@
 		A1000000000000000000001B /* Marble.metal in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* Marble.metal */; };
 		A1000000000000000000001C /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* Metal.framework */; };
 		A1000000000000000000001D /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* MetalKit.framework */; };
+		A1000000000000000000001E /* FocusPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* FocusPreview.swift */; };
+		A1000000000000000000001F /* FocusCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* FocusCardView.swift */; };
 		A10000000000000000000021 /* MarbleGlassDisc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002A /* MarbleGlassDisc.swift */; };
 /* End PBXBuildFile section */
 
@@ -69,6 +71,8 @@
 		A20000000000000000000024 /* Marble.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Marble.metal; sourceTree = "<group>"; };
 		A20000000000000000000025 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		A20000000000000000000026 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		A20000000000000000000027 /* FocusPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPreview.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* FocusCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusCardView.swift; sourceTree = "<group>"; };
 		A2000000000000000000002A /* MarbleGlassDisc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarbleGlassDisc.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* Marbles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Marbles.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Marbles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marbles.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,6 +114,7 @@
 				A4000000000000000000000B /* Chips */,
 				A4000000000000000000000C /* Identity */,
 				A4000000000000000000000D /* Render */,
+				A40000000000000000000010 /* Focus */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -192,6 +197,15 @@
 				A2000000000000000000001F /* ChipView.swift */,
 			);
 			path = Chips;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000010 /* Focus */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000027 /* FocusPreview.swift */,
+				A20000000000000000000028 /* FocusCardView.swift */,
+			);
+			path = Focus;
 			sourceTree = "<group>";
 		};
 		A4000000000000000000000C /* Identity */ = {
@@ -330,6 +344,8 @@
 				A10000000000000000000018 /* Identity.swift in Sources */,
 				A10000000000000000000019 /* MarbleRenderer.swift in Sources */,
 				A1000000000000000000001A /* IdentitySheet.swift in Sources */,
+				A1000000000000000000001E /* FocusPreview.swift in Sources */,
+				A1000000000000000000001F /* FocusCardView.swift in Sources */,
 				A10000000000000000000021 /* MarbleGlassDisc.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

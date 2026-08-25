@@ -11,6 +11,7 @@ struct MarblesTestRunner {
         IngestAuthTests.run()
         MotionTests.run()
         IdentityTests.run()
+        FocusPreviewTests.run()
         if TestRun.failures > 0 {
             print("\(TestRun.failures) test(s) failed")
             exit(1)

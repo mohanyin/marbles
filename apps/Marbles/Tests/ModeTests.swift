@@ -24,12 +24,17 @@ enum ModeTests {
         mode.clickOverflow()
         TestRun.expectEqual(mode.mode, .active, "overflow click opens Active")
 
-        mode.clickMarble("a")
         mode.clickOutside()
-        TestRun.expectEqual(mode.mode, .cluster, "outside click packs to Cluster")
+        TestRun.expectEqual(mode.mode, .cluster, "outside click packs Active to Cluster")
 
         mode.clickMarble("a")
         mode.clickMarble("a")
+        TestRun.expectEqual(mode.mode, .focus("a"))
+        mode.clickOutside()
+        TestRun.expectEqual(mode.mode, .active, "outside click leaves Focus for Active")
+
+        mode.clickMarble("a")
+        TestRun.expectEqual(mode.mode, .focus("a"))
         mode.beginDrag()
         TestRun.expectEqual(mode.mode, .cluster, "drag collapses to Cluster")
 

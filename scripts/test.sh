@@ -26,6 +26,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Ingest/IngestAuth.swift" \
   "$SRC/Motion/MotionEngine.swift" \
   "$SRC/Chips/Chips.swift" \
+  "$SRC/Focus/FocusPreview.swift" \
   "$SRC/Mode/ModeController.swift" \
   "$SRC/Layout/SnapGeometry.swift" \
   "$SRC/Layout/LayoutEngine.swift" \
@@ -37,6 +38,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$TESTS/IngestAuthTests.swift" \
   "$TESTS/MotionTests.swift" \
   "$TESTS/IdentityTests.swift" \
+  "$TESTS/FocusPreviewTests.swift" \
   "$TESTS/main.swift"
 
 "$OUT"

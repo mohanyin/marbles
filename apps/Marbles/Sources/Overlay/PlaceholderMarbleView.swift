@@ -170,33 +170,3 @@ final class OverflowMarbleView: NSView {
     }
 }
 
-final class FocusCardView: NSView {
-    var title: String = "" {
-        didSet { needsDisplay = true }
-    }
-    var detail: String = "" {
-        didSet { needsDisplay = true }
-    }
-
-    override var isFlipped: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
-        NSColor.windowBackgroundColor.withAlphaComponent(0.92).setFill()
-        path.fill()
-        NSColor.separatorColor.setStroke()
-        path.stroke()
-
-        let titleRect = NSRect(x: 14, y: bounds.height - 40, width: bounds.width - 28, height: 22)
-        (title as NSString).draw(in: titleRect, withAttributes: [
-            .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
-            .foregroundColor: NSColor.labelColor,
-        ])
-
-        let bodyRect = NSRect(x: 14, y: 12, width: bounds.width - 28, height: bounds.height - 56)
-        (detail as NSString).draw(in: bodyRect, withAttributes: [
-            .font: NSFont.systemFont(ofSize: 12),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ])
-    }
-}

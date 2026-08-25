@@ -93,12 +93,10 @@ final class OverlayRootView: NSView {
             overflowView.isHidden = true
         }
 
-        if let card = layout.focusCardFrame, let id = focused {
+        if let card = layout.focusCardFrame, let id = focused, let agent = agentsByID[id] {
             focusCard.isHidden = false
             focusCard.frame = card
-            let agent = agentsByID[id]
-            focusCard.title = agent.map { shortTitle($0) } ?? "Agent"
-            focusCard.detail = agent.map { focusCopy($0) } ?? ""
+            focusCard.apply(agent: agent)
         } else {
             focusCard.isHidden = true
         }
@@ -156,43 +154,16 @@ final class OverlayRootView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        if !focusCard.isHidden, focusCard.frame.contains(point) {
+            let local = convert(point, to: focusCard)
+            return focusCard.hitTest(local) ?? focusCard
+        }
         if containsInteractivePoint(point) { return self }
         if capturesEmptyClicks, bounds.contains(point) { return self }
         return nil
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    private func shortTitle(_ agent: Agent) -> String {
-        if agent.id.hasPrefix("debug-") { return "Dummy \(agent.id.dropFirst(6))" }
-        return String(agent.id.prefix(18))
-    }
-
-    private func focusCopy(_ agent: Agent) -> String {
-        let preview: String
-        if agent.status == .waitingOnUser {
-            preview = "Waiting for you"
-        } else if let tool = agent.currentTool {
-            let hint = tool.fileHint.map { " \($0)" } ?? ""
-            preview = "\(tool.name)\(hint)"
-        } else if let text = agent.lastAssistantPreview, !text.isEmpty {
-            preview = text
-        } else {
-            switch agent.status {
-            case .working: preview = "Working…"
-            case .thinking: preview = "Thinking…"
-            case .finished: preview = "Done"
-            case .error: preview = "Something went wrong"
-            case .idle: preview = "Idle"
-            case .waitingOnUser: preview = "Waiting for you"
-            }
-        }
-        let trail = agent.recentTools.prefix(3).map { tool in
-            "\(tool.phase == .failed ? "!" : "•") \(tool.name)"
-        }.joined(separator: "  ")
-        let chips = trail.isEmpty ? "" : "\n\(trail)"
-        return "\(preview)\(chips)\n\(agent.source.rawValue) · \(String(describing: agent.status))"
-    }
 
     func tickMotion(agents: [Agent], reducedMotion: Bool) {
         agentsByID = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
@@ -206,6 +177,9 @@ final class OverlayRootView: NSView {
             }
         }
         layoutChips(mode: currentMode, focused: currentMode.focusedAgentID)
+        if case .focus(let id) = currentMode, let agent = agentsByID[id], !focusCard.isHidden {
+            focusCard.apply(agent: agent)
+        }
         submitMetal()
     }
 

@@ -42,9 +42,16 @@ final class ModeController {
         }
     }
 
-    /// Clicking Slack, Safari, or empty overlay chrome always packs back to the pile.
+    /// Active chrome / desktop → Cluster. Focus chrome / desktop → Active.
     func clickOutside() {
-        resetToCluster()
+        switch mode {
+        case .cluster:
+            break
+        case .active:
+            set(.cluster)
+        case .focus:
+            set(.active)
+        }
     }
 
     func escape() {

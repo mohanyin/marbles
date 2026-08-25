@@ -13,6 +13,8 @@ enum LayoutTests {
         snapOrientations()
         releaseAlwaysLocks()
         eightSnapOriginsAreDistinct()
+        focusCardStaysOnScreen()
+        focusCardIsCompact()
     }
 
     private static func sizes() {
@@ -184,5 +186,47 @@ enum LayoutTests {
         let origins = SnapPoint.allCases.map { SnapGeometry.origin(for: $0, size: size, safe: safe) }
         let unique = Set(origins.map { "\($0.x),\($0.y)" })
         TestRun.expectEqual(unique.count, 8, "each snap point has its own origin")
+    }
+
+    private static func focusCardStaysOnScreen() {
+        let roster = agents(count: 3)
+        let hero = roster[0].id
+        let safe = NSRect(x: 12, y: 12, width: 1416, height: 876)
+        for point in SnapPoint.allCases {
+            let toward: Bool
+            switch point {
+            case .left, .topLeft, .bottomLeft, .bottom: toward = true
+            case .right, .topRight, .bottomRight, .top: toward = false
+            }
+            let layout = LayoutEngine.layout(
+                agents: roster,
+                mode: .focus(hero),
+                orientation: SnapGeometry.orientation(for: point),
+                scrollOffset: 0,
+                availableLineLength: point == .top || point == .bottom ? safe.width : safe.height,
+                cardTowardPositivePerpendicular: toward
+            )
+            guard let card = layout.focusCardFrame else {
+                TestRun.expect(false, "focus card missing at \(point)")
+                continue
+            }
+            TestRun.expect(card.minX >= -0.5 && card.minY >= -0.5, "card origin in panel at \(point)")
+            TestRun.expect(card.maxX <= layout.panelSize.width + 0.5, "card right in panel at \(point)")
+            TestRun.expect(card.maxY <= layout.panelSize.height + 0.5, "card top in panel at \(point)")
+            let origin = SnapGeometry.origin(for: point, size: layout.panelSize, safe: safe)
+            let screen = card.offsetBy(dx: origin.x, dy: origin.y)
+            TestRun.expect(screen.minX >= safe.minX - 0.5, "\(point) left stays on-screen")
+            TestRun.expect(screen.minY >= safe.minY - 0.5, "\(point) bottom stays on-screen")
+            TestRun.expect(screen.maxX <= safe.maxX + 0.5, "\(point) right stays on-screen")
+            TestRun.expect(screen.maxY <= safe.maxY + 0.5, "\(point) top stays on-screen")
+        }
+    }
+
+    private static func focusCardIsCompact() {
+        TestRun.expect(LayoutEngine.focusCardSize.width <= 360, "card ≤360pt")
+        let roster = agents(count: 3)
+        let focus = lineLayout(roster, mode: .focus(roster[0].id))
+        TestRun.expect(focus.focusCardFrame != nil, "focus has a card")
+        TestRun.expect(lineLayout(roster).focusCardFrame == nil, "active has no card")
     }
 }
