@@ -148,6 +148,9 @@ final class OverlayController {
         panel.contentView = view
         self.panel = panel
         self.rootView = view
+        view.focusCard.onJump = { [weak self] kind in
+            self?.jump(kind)
+        }
         return panel
     }
 
@@ -420,6 +423,15 @@ final class OverlayController {
 
     private func handleEscape() {
         mode.escape()
+    }
+
+    private func jump(_ kind: JumpKind) {
+        guard let id = focusedID, let agent = store.agent(id: id) else { return }
+        do {
+            try JumpRouter.open(kind, agent: agent)
+        } catch {
+            return
+        }
     }
 
     private func updateIgnoreMouseEvents() {

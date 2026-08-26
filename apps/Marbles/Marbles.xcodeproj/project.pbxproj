@@ -45,6 +45,8 @@
 		A10000000000000000000025 /* DemoMarble.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002E /* DemoMarble.swift */; };
 		A10000000000000000000026 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002F /* LoginItem.swift */; };
 		A10000000000000000000028 /* TranscriptPeek.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* TranscriptPeek.swift */; };
+		A10000000000000000000029 /* AppLaunching.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* AppLaunching.swift */; };
+		A1000000000000000000002A /* JumpRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* JumpRouter.swift */; };
 		A10000000000000000000027 /* ServiceManagement.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* ServiceManagement.framework */; };
 /* End PBXBuildFile section */
 
@@ -87,6 +89,8 @@
 		A2000000000000000000002E /* DemoMarble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoMarble.swift; sourceTree = "<group>"; };
 		A2000000000000000000002F /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		A20000000000000000000032 /* TranscriptPeek.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptPeek.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* AppLaunching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunching.swift; sourceTree = "<group>"; };
+		A20000000000000000000034 /* JumpRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpRouter.swift; sourceTree = "<group>"; };
 		A20000000000000000000031 /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		A20000000000000000000007 /* Marbles.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Marbles.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000008 /* Marbles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marbles.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -130,6 +134,7 @@
 				A4000000000000000000000C /* Identity */,
 				A4000000000000000000000D /* Render */,
 				A40000000000000000000010 /* Focus */,
+				A40000000000000000000014 /* JumpIn */,
 				A40000000000000000000011 /* Hooks */,
 				A40000000000000000000012 /* Persistence */,
 				A40000000000000000000013 /* Demo */,
@@ -251,6 +256,15 @@
 				A20000000000000000000028 /* FocusCardView.swift */,
 			);
 			path = Focus;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000014 /* JumpIn */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000033 /* AppLaunching.swift */,
+				A20000000000000000000034 /* JumpRouter.swift */,
+			);
+			path = JumpIn;
 			sourceTree = "<group>";
 		};
 		A4000000000000000000000C /* Identity */ = {
@@ -398,6 +412,8 @@
 				A10000000000000000000025 /* DemoMarble.swift in Sources */,
 				A10000000000000000000026 /* LoginItem.swift in Sources */,
 				A10000000000000000000028 /* TranscriptPeek.swift in Sources */,
+				A10000000000000000000029 /* AppLaunching.swift in Sources */,
+				A1000000000000000000002A /* JumpRouter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -45,4 +45,4 @@ brew install --cask --no-quarantine Casks/marbles.rb
 ./scripts/dev-run.sh
 ```
 
-Debug builds rewrite hook commands to the built helper. Jump-in buttons land in W6.
+Debug builds rewrite hook commands to the built helper. Focus jump-in opens Claude Code, Cursor, Terminal, or Conductor.

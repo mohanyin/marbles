@@ -3,11 +3,12 @@ import AppKit
 final class FocusCardView: NSView {
     static let size = LayoutEngine.focusCardSize
 
+    var onJump: ((JumpKind) -> Void)?
+
     private let backdrop = NSVisualEffectView()
     private let title = NSTextField(labelWithString: "")
     private let previewScroll = NSScrollView()
     private let preview = NSTextView()
-    private let reply = NSTextField(labelWithString: "Reply isn’t available yet.")
     private var chipViews: [ChipView] = []
     private let claudeButton = FocusCardView.makeAction("Open Claude Code")
     private let cursorButton = FocusCardView.makeAction("Open Cursor")
@@ -57,9 +58,14 @@ final class FocusCardView: NSView {
         preview.minSize = NSSize(width: 0, height: 0)
         preview.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
-        reply.font = NSFont.systemFont(ofSize: 11)
-        reply.textColor = .secondaryLabelColor
-        addSubview(reply)
+        claudeButton.target = self
+        claudeButton.action = #selector(jumpClaude)
+        cursorButton.target = self
+        cursorButton.action = #selector(jumpCursor)
+        terminalButton.target = self
+        terminalButton.action = #selector(jumpTerminal)
+        conductorButton.target = self
+        conductorButton.action = #selector(jumpConductor)
 
         for button in [claudeButton, cursorButton, terminalButton, conductorButton] {
             addSubview(button)
@@ -70,7 +76,7 @@ final class FocusCardView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func apply(agent: Agent) {
+    func apply(agent: Agent, launcher: AppLaunching = WorkspaceLauncher.shared) {
         if let heading = FocusPreview.title(for: agent) {
             title.stringValue = heading
             title.isHidden = false
@@ -83,11 +89,10 @@ final class FocusCardView: NSView {
             preview.string = next
             preview.scrollToBeginningOfDocument(nil)
         }
-        let actions = FocusPreview.actions(for: agent)
-        claudeButton.isHidden = !actions.showClaudeCode
-        cursorButton.isHidden = !actions.showCursor
-        terminalButton.isHidden = !actions.showTerminal
-        conductorButton.isHidden = !actions.showConductor
+        apply(claudeButton, JumpRouter.decision(.claudeCode, agent: agent, launcher: launcher))
+        apply(cursorButton, JumpRouter.decision(.cursor, agent: agent, launcher: launcher))
+        apply(terminalButton, JumpRouter.decision(.terminal, agent: agent, launcher: launcher))
+        apply(conductorButton, JumpRouter.decision(.conductor, agent: agent, launcher: launcher))
         syncChips(Chips.focusChips(for: agent))
         needsLayout = true
     }
@@ -119,19 +124,33 @@ final class FocusCardView: NSView {
         }
 
         var buttonX = pad
-        let buttonY = chipY + chip + 12
+        var buttonY = chipY + chip + 12
+        let maxX = bounds.width - pad
         for button in [claudeButton, cursorButton, terminalButton, conductorButton] where !button.isHidden {
             button.sizeToFit()
-            let size = button.fittingSize
-            button.frame = NSRect(x: buttonX, y: buttonY, width: ceil(size.width + 8), height: 24)
-            buttonX += button.frame.width + 6
+            let width = ceil(button.fittingSize.width + 8)
+            if buttonX > pad, buttonX + width > maxX {
+                buttonX = pad
+                buttonY += 28
+            }
+            button.frame = NSRect(x: buttonX, y: buttonY, width: width, height: 24)
+            buttonX += width + 6
         }
-
-        reply.frame = NSRect(x: pad, y: buttonY + 32, width: width, height: 16)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         super.hitTest(point) ?? self
+    }
+
+    @objc private func jumpClaude() { onJump?(.claudeCode) }
+    @objc private func jumpCursor() { onJump?(.cursor) }
+    @objc private func jumpTerminal() { onJump?(.terminal) }
+    @objc private func jumpConductor() { onJump?(.conductor) }
+
+    private func apply(_ button: NSButton, _ decision: JumpDecision) {
+        button.isHidden = !decision.visible
+        button.isEnabled = decision.enabled
+        button.toolTip = decision.tooltip
     }
 
     private func syncChips(_ kinds: [ChipKind]) {
@@ -153,8 +172,6 @@ final class FocusCardView: NSView {
         let button = NSButton(title: title, target: nil, action: nil)
         button.bezelStyle = .flexiblePush
         button.controlSize = .small
-        button.isEnabled = false
-        button.toolTip = "Jump-in lands in the next update"
         return button
     }
 }

@@ -32,6 +32,8 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Hooks/Hooks.swift" \
   "$SRC/Persistence/PrefsStore.swift" \
   "$SRC/Demo/DemoMarble.swift" \
+  "$SRC/JumpIn/AppLaunching.swift" \
+  "$SRC/JumpIn/JumpRouter.swift" \
   "$SRC/Mode/ModeController.swift" \
   "$SRC/Layout/SnapGeometry.swift" \
   "$SRC/Layout/LayoutEngine.swift" \
@@ -46,6 +48,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$TESTS/FocusPreviewTests.swift" \
   "$TESTS/HooksMergeTests.swift" \
   "$TESTS/DemoTests.swift" \
+  "$TESTS/JumpInTests.swift" \
   "$TESTS/main.swift"
 
 "$OUT"

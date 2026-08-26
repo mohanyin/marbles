@@ -62,12 +62,11 @@ enum FocusPreview {
     }
 
     static func actions(for agent: Agent) -> Actions {
-        let cursor = agent.source == .cursor
-        return Actions(
-            showClaudeCode: !cursor,
-            showCursor: cursor,
-            showTerminal: true,
-            showConductor: agent.conductorWorkspaceID != nil || isConductorCWD(agent.cwd)
+        Actions(
+            showClaudeCode: JumpRouter.isVisible(.claudeCode, agent: agent),
+            showCursor: JumpRouter.isVisible(.cursor, agent: agent),
+            showTerminal: JumpRouter.isVisible(.terminal, agent: agent),
+            showConductor: JumpRouter.isVisible(.conductor, agent: agent)
         )
     }
 
@@ -89,10 +88,5 @@ enum FocusPreview {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func isConductorCWD(_ cwd: URL?) -> Bool {
-        guard let path = cwd?.path else { return false }
-        return path.contains("/conductor/workspaces/")
     }
 }
