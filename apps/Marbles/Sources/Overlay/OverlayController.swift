@@ -15,14 +15,17 @@ final class OverlayController {
     private var localMouseMonitor: Any?
     private var keyMonitor: Any?
 
-    private var snap: SnapState = .snap(.bottomRight)
+    private var snap: SnapState = .snap(.right)
     private var scrollOffset: CGFloat = 0
     private var currentLayout: LayoutResult?
     private var animation: FrameAnimation?
 
     private var drag: DragState?
+    private var pendingMarbleClick: AgentID?
     private var lastInteractionWasOverlay = false
     private var motionTimer: Timer?
+    private var scrollSnapTimer: Timer?
+    private var knownIDs: Set<AgentID> = []
 
     var isVisible: Bool {
         panel?.isVisible ?? false
@@ -34,12 +37,12 @@ final class OverlayController {
 
     init(store: AgentStore) {
         self.store = store
-        mode.onChange = { [weak self] _ in
-            self?.scrollOffset = 0
-            self?.relayout(animated: true)
+        knownIDs = Set(store.agents.map(\.id))
+        mode.onChange = { [weak self] newMode in
+            self?.handleModeChange(newMode)
         }
         store.onChange = { [weak self] in
-            self?.relayout(animated: true)
+            self?.handleStoreChange()
         }
     }
 
@@ -66,13 +69,13 @@ final class OverlayController {
 
     func injectDebugAgents(count: Int) {
         store.injectDebugAgents(count: count)
-        mode.resetToCluster()
+        mode.resetToDock()
         scrollOffset = 0
     }
 
     func clearInjectedAgents() {
         store.clearInjected()
-        mode.resetToCluster()
+        mode.resetToDock()
         scrollOffset = 0
     }
 
@@ -158,6 +161,78 @@ final class OverlayController {
         panel?.screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
+    private func handleModeChange(_ newMode: OverlayMode) {
+        if case .focus(let id) = newMode {
+            scrollFocused(id)
+        }
+        relayout(animated: true)
+    }
+
+    private func handleStoreChange() {
+        let ids = store.agents.map(\.id)
+        let idSet = Set(ids)
+        if case .focus(let id) = mode.mode, !idSet.contains(id) {
+            mode.resetToDock()
+        }
+        let previous = knownIDs
+        let rosterChanged = previous != idSet
+        if previous.isEmpty {
+            knownIDs = idSet
+        } else {
+            let inserted = ids.filter { !previous.contains($0) }
+            knownIDs = idSet
+            if mode.mode.focusedAgentID == nil, let newest = inserted.last, let index = ids.firstIndex(of: newest) {
+                scrollOffset = LayoutEngine.scrollToReveal(
+                    index: index,
+                    count: ids.count,
+                    available: availableLineLength(),
+                    current: scrollOffset
+                )
+            }
+        }
+        if rosterChanged, let focused = mode.mode.focusedAgentID {
+            scrollFocused(focused)
+        }
+        relayout(animated: true)
+    }
+
+    private func scrollFocused(_ id: AgentID) {
+        let ids = store.agents.map(\.id)
+        guard let index = ids.firstIndex(of: id) else { return }
+        scrollOffset = LayoutEngine.scrollToReveal(
+            index: index,
+            count: ids.count,
+            available: availableLineLength(),
+            current: scrollOffset
+        )
+    }
+
+    private func availableLineLength() -> CGFloat {
+        let screen = screenForPanel()
+        let safe = SnapGeometry.safeFrame(of: screen)
+        let orientation = SnapGeometry.lineOrientation(
+            snap: snap,
+            panelOrigin: panel?.frame.origin ?? .zero,
+            panelSize: panel?.frame.size ?? .zero,
+            screen: screen
+        )
+        return orientation.axis == .vertical ? safe.height : safe.width
+    }
+
+    private func currentPoint() -> SnapPoint {
+        switch snap {
+        case .snap(let point):
+            return point
+        case .free:
+            let screen = screenForPanel()
+            return SnapGeometry.nearestPoint(
+                panelOrigin: panel?.frame.origin ?? .zero,
+                panelSize: panel?.frame.size ?? .zero,
+                screen: screen
+            )
+        }
+    }
+
     private func relayout(animated: Bool) {
         guard let panel else { return }
         let screen = screenForPanel()
@@ -169,7 +244,7 @@ final class OverlayController {
             screen: screen
         )
         let available: CGFloat = orientation.axis == .vertical ? safe.height : safe.width
-        let cardPositive = cardTowardPositive(snap: snap, panelOrigin: panel.frame.origin, panelSize: panel.frame.size, screen: screen)
+        let cardPositive = SnapGeometry.cardTowardPositive(for: currentPoint())
         let reduced = prefersReducedMotion
         let target = LayoutEngine.layout(
             agents: store.agents,
@@ -179,10 +254,15 @@ final class OverlayController {
             availableLineLength: available,
             cardTowardPositivePerpendicular: cardPositive
         )
+        scrollOffset = target.scrollOffset
 
-        let origin = SnapGeometry.panelOrigin(snap: snap, panelSize: target.panelSize, screen: screen)
+        let origin = SnapGeometry.panelOrigin(
+            snap: snap,
+            dockFrame: target.dockFrame,
+            panelSize: target.panelSize,
+            screen: screen
+        )
         updateKeyStatus()
-        rootView?.capturesEmptyClicks = mode.mode != .cluster
 
         if animated, !reduced, let current = currentLayout {
             let fromScreen = current.placed(inScreenAt: panel.frame.origin)
@@ -205,7 +285,6 @@ final class OverlayController {
         guard let panel, let rootView else { return }
         panel.setFrame(NSRect(origin: origin, size: layout.panelSize), display: true)
         rootView.frame = NSRect(origin: .zero, size: layout.panelSize)
-        rootView.capturesEmptyClicks = mode.mode != .cluster
         rootView.reducedMotion = prefersReducedMotion
         rootView.apply(layout: layout, agents: store.agents, focused: focusedID, mode: mode.mode)
         currentLayout = layout
@@ -219,23 +298,11 @@ final class OverlayController {
 
     private func updateKeyStatus() {
         guard let panel else { return }
-        let wantsKey = mode.mode != .cluster
+        let wantsKey = mode.mode != .dock
         panel.allowsKey = wantsKey
         if wantsKey {
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKey()
-        }
-    }
-
-    private func cardTowardPositive(snap: SnapState, panelOrigin: CGPoint, panelSize: CGSize, screen: NSScreen) -> Bool {
-        let point: SnapPoint
-        switch snap {
-        case .snap(let value): point = value
-        case .free: point = SnapGeometry.nearestPoint(panelOrigin: panelOrigin, panelSize: panelSize, screen: screen)
-        }
-        switch point {
-        case .left, .topLeft, .bottomLeft, .bottom: return true
-        case .right, .topRight, .bottomRight, .top: return false
         }
     }
 
@@ -274,7 +341,7 @@ final class OverlayController {
 
     private func tickMotion() {
         let reduced = prefersReducedMotion
-        store.advanceAnimationTime(1.0 / 60.0)
+        store.advanceAnimationTime(1.0 / 60.0, reducedMotion: reduced)
         rootView?.tickMotion(agents: store.agents, reducedMotion: reduced)
     }
 
@@ -295,7 +362,7 @@ final class OverlayController {
         }
         if event.type == .leftMouseDown {
             let over = containsScreenPoint(NSEvent.mouseLocation)
-            if !over, mode.mode != .cluster {
+            if !over, mode.mode != .dock {
                 mode.clickOutside()
                 lastInteractionWasOverlay = false
             }
@@ -331,27 +398,29 @@ final class OverlayController {
     }
 
     private func handleHover() {
-        guard drag == nil, NSEvent.pressedMouseButtons == 0 else { return }
-        switch mode.mode {
-        case .active, .focus:
-            break
-        case .cluster:
-            return
-        }
+        guard drag == nil, pendingMarbleClick == nil, NSEvent.pressedMouseButtons == 0 else { return }
         guard let panel, let rootView, panel.isVisible else { return }
         let windowPoint = panel.convertPoint(fromScreen: NSEvent.mouseLocation)
         let point = rootView.convert(windowPoint, from: nil)
-        if case .marble(let id) = rootView.hitTestKind(at: point) {
+        switch rootView.hitTestKind(at: point) {
+        case .marble(let id):
             mode.hoverMarble(id)
+        case .card, .dock:
+            break
+        case .none:
+            if mode.mode != .dock {
+                mode.hoverOff()
+            }
         }
     }
 
     private func handleMouseDown(_ event: NSEvent) -> NSEvent? {
         guard let panel, let rootView else { return event }
         let point = rootView.convert(event.locationInWindow, from: nil)
+        let focused = mode.mode != .dock
         switch rootView.hitTestKind(at: point) {
         case .none:
-            if mode.mode != .cluster {
+            if focused {
                 lastInteractionWasOverlay = true
                 mode.clickOutside()
                 return nil
@@ -360,14 +429,22 @@ final class OverlayController {
         case .card:
             lastInteractionWasOverlay = true
             return event
-        case .overflow:
+        case .dock:
             lastInteractionWasOverlay = true
-            drag = DragState(startScreen: NSEvent.mouseLocation, startOrigin: panel.frame.origin, hit: .overflow)
+            if focused {
+                mode.clickOutside()
+                return nil
+            }
+            drag = DragState(startScreen: NSEvent.mouseLocation, startOrigin: panel.frame.origin, hit: .dock)
             return nil
         case .marble(let id):
             lastInteractionWasOverlay = true
             updateKeyStatus()
-            drag = DragState(startScreen: NSEvent.mouseLocation, startOrigin: panel.frame.origin, hit: .marble(id))
+            if focused {
+                pendingMarbleClick = id
+            } else {
+                drag = DragState(startScreen: NSEvent.mouseLocation, startOrigin: panel.frame.origin, hit: .marble(id))
+            }
             return nil
         }
     }
@@ -379,7 +456,6 @@ final class OverlayController {
         let dy = screen.y - drag.startScreen.y
         if !drag.moved, hypot(dx, dy) >= 4 {
             drag.moved = true
-            mode.beginDrag()
             self.drag = drag
         }
         guard drag.moved else { return }
@@ -396,29 +472,50 @@ final class OverlayController {
     }
 
     private func handleMouseUp(_ event: NSEvent) {
+        if let id = pendingMarbleClick {
+            pendingMarbleClick = nil
+            mode.clickMarble(id)
+            return
+        }
         guard let drag else { return }
         defer { self.drag = nil }
         if drag.moved {
-            if let panel {
-                snap = SnapGeometry.resolveRelease(panelFrame: panel.frame, screen: screenForPanel())
+            if let panel, let layout = currentLayout {
+                let dock = layout.dockFrame.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
+                snap = SnapGeometry.resolveDockRelease(dockFrame: dock, screen: screenForPanel())
                 relayout(animated: true)
             }
             return
         }
-        switch drag.hit {
-        case .marble(let id):
+        if case .marble(let id) = drag.hit {
             mode.clickMarble(id)
-        case .overflow:
-            mode.clickOverflow()
-        case .card, .none:
-            break
         }
     }
 
     private func handleScroll(_ event: NSEvent) {
-        guard mode.mode != .cluster else { return }
-        scrollOffset -= event.scrollingDeltaY
+        let orientation = SnapGeometry.orientation(for: currentPoint())
+        let along: CGFloat
+        switch orientation.axis {
+        case .vertical:
+            along = event.scrollingDeltaY
+        case .horizontal:
+            along = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.scrollingDeltaY
+        }
+        scrollOffset -= along
         relayout(animated: false)
+        scrollSnapTimer?.invalidate()
+        scrollSnapTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.snapScrollToItem()
+            }
+        }
+    }
+
+    private func snapScrollToItem() {
+        let layout = currentLayout
+        let maxScroll = layout?.maxScroll ?? 0
+        scrollOffset = LayoutEngine.snapScroll(scrollOffset, maxScroll: maxScroll)
+        relayout(animated: true)
     }
 
     private func handleEscape() {
@@ -436,13 +533,12 @@ final class OverlayController {
 
     private func updateIgnoreMouseEvents() {
         guard let panel, panel.isVisible else { return }
-        if mode.mode != .cluster {
-            panel.ignoresMouseEvents = false
-            return
-        }
         let over = containsScreenPoint(NSEvent.mouseLocation)
         let dragging = drag?.moved == true
-        panel.ignoresMouseEvents = !(over || dragging)
+        panel.ignoresMouseEvents = !(over || dragging || mode.mode != .dock)
+        if mode.mode != .dock {
+            panel.ignoresMouseEvents = false
+        }
     }
 
     private var prefersReducedMotion: Bool {
@@ -519,43 +615,36 @@ private final class FrameAnimation {
                 ),
                 size: start.size + (end.size - start.size) * t,
                 z: end.z,
-                dim: start.dim + (end.dim - start.dim) * t
+                dim: 0
             )
         }
         return LayoutResult(
             frames: frames,
-            overflow: t > 0.5 ? to.overflow : from.overflow,
-            overflowFrame: lerp(from.overflowFrame, to.overflowFrame, t),
+            dockFrame: lerp(from.dockFrame, to.dockFrame, t),
             focusCardFrame: lerp(from.focusCardFrame, to.focusCardFrame, t),
             panelSize: CGSize(
                 width: from.panelSize.width + (to.panelSize.width - from.panelSize.width) * t,
                 height: from.panelSize.height + (to.panelSize.height - from.panelSize.height) * t
-            )
+            ),
+            scrollOffset: from.scrollOffset + (to.scrollOffset - from.scrollOffset) * t,
+            maxScroll: to.maxScroll,
+            visibleCount: t > 0.5 ? to.visibleCount : from.visibleCount,
+            orientation: to.orientation
         )
     }
 
-    private static func lerp(_ from: MarbleFrame?, _ to: MarbleFrame?, _ t: CGFloat) -> MarbleFrame? {
-        guard let to else { return t > 0.5 ? nil : from }
-        let start = from ?? to
-        return MarbleFrame(
-            center: CGPoint(
-                x: start.center.x + (to.center.x - start.center.x) * t,
-                y: start.center.y + (to.center.y - start.center.y) * t
-            ),
-            size: start.size + (to.size - start.size) * t,
-            z: to.z,
-            dim: start.dim + (to.dim - start.dim) * t
+    private static func lerp(_ from: CGRect, _ to: CGRect, _ t: CGFloat) -> CGRect {
+        CGRect(
+            x: from.origin.x + (to.origin.x - from.origin.x) * t,
+            y: from.origin.y + (to.origin.y - from.origin.y) * t,
+            width: from.size.width + (to.size.width - from.size.width) * t,
+            height: from.size.height + (to.size.height - from.size.height) * t
         )
     }
 
     private static func lerp(_ from: CGRect?, _ to: CGRect?, _ t: CGFloat) -> CGRect? {
         guard let to else { return t > 0.5 ? nil : from }
         let start = from ?? to
-        return CGRect(
-            x: start.origin.x + (to.origin.x - start.origin.x) * t,
-            y: start.origin.y + (to.origin.y - start.origin.y) * t,
-            width: start.size.width + (to.size.width - start.size.width) * t,
-            height: start.size.height + (to.size.height - start.size.height) * t
-        )
+        return lerp(start, to, t)
     }
 }

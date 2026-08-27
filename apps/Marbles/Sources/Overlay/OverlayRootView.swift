@@ -2,19 +2,18 @@ import AppKit
 
 final class OverlayRootView: NSView {
     private var marbleViews: [AgentID: PlaceholderMarbleView] = [:]
-    private var glassViews: [AgentID: MarbleGlassDisc] = [:]
-    private var chipViews: [String: ChipView] = [:]
-    private let overflowView = OverflowMarbleView()
+    private var lightViews: [AgentID: IndicatorLightsView] = [:]
+    private let dockGlass = DockGlassView(frame: .zero)
+    private let dockContent = NSView(frame: .zero)
+    private let dockMask = CAShapeLayer()
     private let metalView: MarbleMetalView?
     let metalRenderer: MarbleRenderer?
     let focusCard = FocusCardView()
 
     var displayedLayout: LayoutResult?
     var agentsByID: [AgentID: Agent] = [:]
-    /// Active/Focus: clicks on empty panel chrome dismiss instead of falling through.
-    var capturesEmptyClicks = false
     var reducedMotion = false
-    private var currentMode: OverlayMode = .cluster
+    private var currentMode: OverlayMode = .dock
 
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
@@ -30,13 +29,16 @@ final class OverlayRootView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        overflowView.isHidden = true
-        focusCard.isHidden = true
+
+        dockContent.wantsLayer = true
+        dockContent.layer?.mask = dockMask
+        addSubview(dockGlass)
+        addSubview(dockContent)
         if let metalView {
             metalView.autoresizingMask = [.width, .height]
-            addSubview(metalView, positioned: .below, relativeTo: nil)
+            dockContent.addSubview(metalView)
         }
-        addSubview(overflowView)
+        focusCard.isHidden = true
         addSubview(focusCard)
     }
 
@@ -49,50 +51,35 @@ final class OverlayRootView: NSView {
         currentMode = mode
         agentsByID = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
 
+        dockGlass.frame = layout.dockFrame
+        dockContent.frame = layout.dockFrame
+        updateDockMask()
+
         let ids = Set(layout.frames.keys)
         for id in marbleViews.keys where !ids.contains(id) {
             marbleViews[id]?.removeFromSuperview()
             marbleViews.removeValue(forKey: id)
-            glassViews[id]?.removeFromSuperview()
-            glassViews.removeValue(forKey: id)
+            lightViews[id]?.removeFromSuperview()
+            lightViews.removeValue(forKey: id)
         }
         for (id, frame) in layout.frames {
             let view = marbleViews[id] ?? PlaceholderMarbleView(agent: agentsByID[id] ?? Agent.debugDummy(index: 0))
             if marbleViews[id] == nil {
                 marbleViews[id] = view
-                addSubview(view, positioned: .below, relativeTo: overflowView)
+                dockContent.addSubview(view)
             }
             if let agent = agentsByID[id] {
                 view.agent = agent
             }
             view.drawsInterior = metalView == nil
             view.marbleSize = frame.size
-            view.dim = frame.dim
+            view.dim = 0
             view.now = Date()
             view.reducedMotion = reducedMotion
-            view.frame = rect(for: frame)
-            let glass = glassViews[id] ?? MarbleGlassDisc(frame: .zero)
-            if glassViews[id] == nil {
-                glassViews[id] = glass
-                if let metalView {
-                    addSubview(glass, positioned: .below, relativeTo: metalView)
-                } else {
-                    addSubview(glass, positioned: .below, relativeTo: view)
-                }
-            }
-            glass.frame = glassRect(for: frame)
-            glass.isHidden = false
+            view.frame = dockRect(for: frame, dock: layout.dockFrame)
         }
         submitMetal()
-        layoutChips(mode: mode, focused: focused)
-
-        if let overflow = layout.overflow, let frame = layout.overflowFrame {
-            overflowView.isHidden = false
-            overflowView.hiddenCount = overflow.hiddenCount
-            overflowView.frame = rect(for: frame)
-        } else {
-            overflowView.isHidden = true
-        }
+        layoutLights()
 
         if let card = layout.focusCardFrame, let id = focused, let agent = agentsByID[id] {
             focusCard.isHidden = false
@@ -109,7 +96,7 @@ final class OverlayRootView: NSView {
     enum Hit {
         case none
         case marble(AgentID)
-        case overflow
+        case dock
         case card
 
         var isInteractive: Bool {
@@ -126,29 +113,19 @@ final class OverlayRootView: NSView {
         if !focusCard.isHidden, focusCard.frame.contains(point) {
             return .card
         }
-        if !overflowView.isHidden {
-            let frame = overflowView.frame
-            let center = NSPoint(x: frame.midX, y: frame.midY)
-            if hypot(point.x - center.x, point.y - center.y) <= frame.width / 2 {
-                return .overflow
-            }
-        }
         if let layout = displayedLayout {
-            for (key, chip) in chipViews where !chip.isHidden {
-                let dx = point.x - chip.frame.midX
-                let dy = point.y - chip.frame.midY
-                if (dx * dx + dy * dy) <= (chip.frame.width / 2) * (chip.frame.width / 2),
-                   let id = key.split(separator: "#").first {
-                    return .marble(String(id))
-                }
-            }
             let ordered = layout.frames.sorted { $0.value.z > $1.value.z }
             for (id, frame) in ordered {
                 let dx = point.x - frame.center.x
                 let dy = point.y - frame.center.y
-                if (dx * dx + dy * dy) <= (frame.size / 2) * (frame.size / 2) {
+                if (dx * dx + dy * dy) <= (frame.size / 2) * (frame.size / 2),
+                   stadiumContains(point, in: layout.dockFrame)
+                {
                     return .marble(id)
                 }
+            }
+            if stadiumContains(point, in: layout.dockFrame) {
+                return .dock
             }
         }
         return .none
@@ -160,7 +137,6 @@ final class OverlayRootView: NSView {
             return focusCard.hitTest(local) ?? focusCard
         }
         if containsInteractivePoint(point) { return self }
-        if capturesEmptyClicks, bounds.contains(point) { return self }
         return nil
     }
 
@@ -177,7 +153,7 @@ final class OverlayRootView: NSView {
                 view.needsDisplay = true
             }
         }
-        layoutChips(mode: currentMode, focused: currentMode.focusedAgentID)
+        layoutLights()
         if case .focus(let id) = currentMode, let agent = agentsByID[id], !focusCard.isHidden {
             focusCard.apply(agent: agent)
         }
@@ -186,100 +162,88 @@ final class OverlayRootView: NSView {
 
     private func submitMetal() {
         guard let metalView, let metalRenderer, let layout = displayedLayout else { return }
-        metalView.frame = bounds
-        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        metalView.frame = dockContent.bounds
         let now = Date()
         let items = layout.frames.compactMap { id, frame -> MarbleDrawItem? in
             guard let agent = agentsByID[id] else { return nil }
-            return MarbleDrawItem(agent: agent, frame: frame, now: now, reducedMotion: reduced)
+            var local = frame
+            local.center = CGPoint(
+                x: frame.center.x - layout.dockFrame.minX,
+                y: frame.center.y - layout.dockFrame.minY
+            )
+            return MarbleDrawItem(agent: agent, frame: local, now: now, reducedMotion: reducedMotion)
         }
-        metalRenderer.submit(items: items, viewport: bounds.size, scale: window?.backingScaleFactor ?? 2)
+        metalRenderer.submit(items: items, viewport: dockContent.bounds.size, scale: window?.backingScaleFactor ?? 2)
         metalView.setNeedsDisplay(metalView.bounds)
     }
 
-    private func layoutChips(mode: OverlayMode, focused: AgentID?) {
-        var seen = Set<String>()
-        let now = Date()
-        if case .focus = mode {
-            for (key, view) in chipViews {
-                view.isHidden = true
-                _ = key
-            }
-            return
-        }
-        for (id, frame) in displayedLayout?.frames ?? [:] {
+    private func layoutLights() {
+        guard let layout = displayedLayout else { return }
+        var seen = Set<AgentID>()
+        for (id, frame) in layout.frames {
             guard let agent = agentsByID[id] else { continue }
-            let chips: [(ChipKind, CGFloat)]
-            switch mode {
-            case .cluster:
-                chips = Chips.clusterChip(for: agent).map { [($0, 1)] } ?? []
-            case .active:
-                chips = Chips.activeChips(for: agent, now: now)
-            case .focus:
-                chips = []
+            seen.insert(id)
+            let view = lightViews[id] ?? IndicatorLightsView(frame: .zero)
+            if lightViews[id] == nil {
+                lightViews[id] = view
+                dockContent.addSubview(view, positioned: .above, relativeTo: metalView ?? marbleViews[id])
             }
-            let size = Chips.size(for: frame.size)
-            for (index, item) in chips.enumerated() {
-                let key = "\(id)#\(index)"
-                seen.insert(key)
-                let view = chipViews[key] ?? ChipView(frame: .zero)
-                if chipViews[key] == nil {
-                    chipViews[key] = view
-                    addSubview(view, positioned: .above, relativeTo: marbleViews[id])
-                }
-                view.kind = item.0
-                view.fade = item.1
-                view.isHidden = false
-                let center = Chips.center(for: frame, index: index)
-                view.frame = NSRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
-            }
+            let local = MarbleFrame(
+                center: CGPoint(
+                    x: frame.center.x - layout.dockFrame.minX,
+                    y: frame.center.y - layout.dockFrame.minY
+                ),
+                size: frame.size,
+                z: frame.z,
+                dim: 0
+            )
+            view.stackVertically = layout.orientation.axis == .horizontal
+            view.lights = Indicators.lights(for: agent, now: Date(), reducedMotion: reducedMotion)
+            view.frame = Indicators.viewFrame(marble: local, orientation: layout.orientation)
+            view.isHidden = false
         }
-        for key in chipViews.keys where !seen.contains(key) {
-            chipViews[key]?.removeFromSuperview()
-            chipViews.removeValue(forKey: key)
+        for id in lightViews.keys where !seen.contains(id) {
+            lightViews[id]?.removeFromSuperview()
+            lightViews.removeValue(forKey: id)
         }
     }
 
-    private func rect(for frame: MarbleFrame) -> NSRect {
+    private func dockRect(for frame: MarbleFrame, dock: CGRect) -> NSRect {
         NSRect(
-            x: frame.center.x - frame.size / 2,
-            y: frame.center.y - frame.size / 2,
+            x: frame.center.x - frame.size / 2 - dock.minX,
+            y: frame.center.y - frame.size / 2 - dock.minY,
             width: frame.size,
             height: frame.size
         )
     }
 
-    /// Pull the glass disc inside the painted sphere so its material rim
-    /// stays under the marble instead of drawing a bezel around it.
-    private func glassRect(for frame: MarbleFrame) -> NSRect {
-        let inset = max(4, frame.size * 0.12)
-        return rect(for: frame).insetBy(dx: inset, dy: inset)
+    private func updateDockMask() {
+        let bounds = dockContent.bounds
+        let radius = min(bounds.width, bounds.height) / 2
+        dockMask.frame = bounds
+        dockMask.path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    private func stadiumContains(_ point: CGPoint, in rect: CGRect) -> Bool {
+        let radius = min(rect.width, rect.height) / 2
+        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        return path.contains(point)
     }
 
     private func sortZ() {
-        for glass in glassViews.values {
-            addSubview(glass, positioned: .below, relativeTo: nil)
-        }
+        addSubview(dockGlass, positioned: .below, relativeTo: nil)
+        addSubview(dockContent, positioned: .above, relativeTo: dockGlass)
         if let metalView {
-            addSubview(metalView, positioned: .above, relativeTo: nil)
+            dockContent.addSubview(metalView, positioned: .above, relativeTo: nil)
         }
         let sorted = (displayedLayout?.frames ?? [:]).sorted { $0.value.z < $1.value.z }
-        let overflowZ = displayedLayout?.overflowFrame?.z ?? Int.max
-        var placedOverflow = overflowView.isHidden
-        for (id, frame) in sorted {
-            if !placedOverflow, frame.z >= overflowZ {
-                addSubview(overflowView, positioned: .above, relativeTo: nil)
-                placedOverflow = true
-            }
+        for (id, _) in sorted {
             if let view = marbleViews[id] {
-                view.superview?.addSubview(view, positioned: .above, relativeTo: nil)
+                dockContent.addSubview(view, positioned: .above, relativeTo: nil)
             }
         }
-        if !placedOverflow {
-            addSubview(overflowView, positioned: .above, relativeTo: nil)
-        }
-        for view in chipViews.values {
-            addSubview(view, positioned: .above, relativeTo: nil)
+        for view in lightViews.values {
+            dockContent.addSubview(view, positioned: .above, relativeTo: nil)
         }
         addSubview(focusCard, positioned: .above, relativeTo: nil)
     }

@@ -80,8 +80,8 @@ final class StatusItemController {
         let debug = NSMenu(title: "Debug")
         debug.addItem(item("Inject 3 dummy agents", #selector(inject3)))
         debug.addItem(item("Inject 9 dummy agents", #selector(inject9)))
-        debug.addItem(item("Inject 27 dummy agents", #selector(inject27)))
-        debug.addItem(item("Inject 28 dummy agents", #selector(inject28)))
+        debug.addItem(item("Inject 10 dummy agents", #selector(inject10)))
+        debug.addItem(item("Inject 50 dummy agents", #selector(inject50)))
         debug.addItem(.separator())
         debug.addItem(item("Set selected → Working", #selector(statusWorking)))
         debug.addItem(item("Set selected → Thinking", #selector(statusThinking)))
@@ -208,8 +208,8 @@ final class StatusItemController {
 
     @objc private func inject3() { overlay.injectDebugAgents(count: 3) }
     @objc private func inject9() { overlay.injectDebugAgents(count: 9) }
-    @objc private func inject27() { overlay.injectDebugAgents(count: 27) }
-    @objc private func inject28() { overlay.injectDebugAgents(count: 28) }
+    @objc private func inject10() { overlay.injectDebugAgents(count: 10) }
+    @objc private func inject50() { overlay.injectDebugAgents(count: 50) }
     @objc private func clearInjected() { overlay.clearInjectedAgents() }
     @objc private func statusWorking() { overlay.setSelectedStatus(.working) }
     @objc private func statusThinking() { overlay.setSelectedStatus(.thinking) }

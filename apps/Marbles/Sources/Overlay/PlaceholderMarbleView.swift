@@ -54,11 +54,12 @@ final class PlaceholderMarbleView: NSView {
 
     private func fillColor(uniforms: MarbleFrameUniforms) -> NSColor {
         let params = Identity.params(seed: agent.seed)
+        let back = params.colorBack
         var color = NSColor(
-            calibratedHue: CGFloat(params.hue),
-            saturation: CGFloat(params.saturation) * 0.85,
-            brightness: CGFloat(0.52 + params.luminosity * 0.42),
-            alpha: 0.94
+            calibratedRed: CGFloat(back.x),
+            green: CGFloat(back.y),
+            blue: CGFloat(back.z),
+            alpha: 1
         )
         if uniforms.errorHue > 0 {
             var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -140,33 +141,6 @@ final class PlaceholderMarbleView: NSView {
             return NSColor.white.withAlphaComponent(0.7)
         }
         return NSColor.white.withAlphaComponent(0.5)
-    }
-}
-
-final class OverflowMarbleView: NSView {
-    var hiddenCount: Int = 0 {
-        didSet { needsDisplay = true }
-    }
-
-    override var isFlipped: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1))
-        NSColor.black.withAlphaComponent(0.55).setFill()
-        path.fill()
-        NSColor.white.withAlphaComponent(0.8).setStroke()
-        path.stroke()
-
-        let text = "+\(hiddenCount)" as NSString
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
-            .foregroundColor: NSColor.white,
-        ]
-        let size = text.size(withAttributes: attrs)
-        text.draw(
-            at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
-            withAttributes: attrs
-        )
     }
 }
 

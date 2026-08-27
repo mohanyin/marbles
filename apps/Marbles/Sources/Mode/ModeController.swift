@@ -1,8 +1,7 @@
 import Foundation
 
 enum OverlayMode: Equatable {
-    case cluster
-    case active
+    case dock
     case focus(AgentID)
 
     var focusedAgentID: AgentID? {
@@ -13,75 +12,34 @@ enum OverlayMode: Equatable {
 
 @MainActor
 final class ModeController {
-    private(set) var mode: OverlayMode = .cluster
+    private(set) var mode: OverlayMode = .dock
     var onChange: ((OverlayMode) -> Void)?
 
-    func clickCluster() {
-        guard mode == .cluster else { return }
-        set(.active)
-    }
-
-    func clickOverflow() {
-        if mode == .cluster {
-            set(.active)
-        }
-    }
-
     func clickMarble(_ id: AgentID) {
-        switch mode {
-        case .cluster:
-            set(.active)
-        case .active:
-            set(.focus(id))
-        case .focus(let current):
-            if current == id {
-                set(.active)
-            } else {
-                set(.focus(id))
-            }
-        }
+        set(.focus(id))
     }
 
-    /// Active hover opens Focus. Focus hover on another marble switches. Cluster stays put.
+    /// Hover opens Focus from Default and switches the focused agent.
     func hoverMarble(_ id: AgentID) {
-        switch mode {
-        case .cluster:
-            break
-        case .active:
-            set(.focus(id))
-        case .focus(let current):
-            if current != id {
-                set(.focus(id))
-            }
-        }
+        set(.focus(id))
     }
 
-    /// Desktop / empty chrome always packs back to Cluster.
+    /// Pointer left the dock pill and the Focus card.
+    func hoverOff() {
+        set(.dock)
+    }
+
+    /// Desktop, dock glass, or empty chrome.
     func clickOutside() {
-        if mode != .cluster {
-            set(.cluster)
-        }
+        set(.dock)
     }
 
     func escape() {
-        switch mode {
-        case .cluster:
-            break
-        case .active:
-            set(.cluster)
-        case .focus:
-            set(.active)
-        }
+        set(.dock)
     }
 
-    func beginDrag() {
-        if mode != .cluster {
-            set(.cluster)
-        }
-    }
-
-    func resetToCluster() {
-        set(.cluster)
+    func resetToDock() {
+        set(.dock)
     }
 
     private func set(_ mode: OverlayMode) {

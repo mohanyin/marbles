@@ -127,15 +127,14 @@ final class AgentStore {
     }
 
     func injectDebugAgents(count: Int) {
-        var next = (0..<count).map { index -> Agent in
+        let next = (0..<count).map { index -> Agent in
             var agent = Agent.debugDummy(index: index)
             agent.status = debugStatus(index: index, count: count)
             return agent
         }
-        LatticeSlots.assign(&next)
         let live = agents.filter { !$0.isInjected }
         agents = next + live
-        LatticeSlots.assign(&agents)
+        enforceCap()
         notify()
     }
 
@@ -147,7 +146,6 @@ final class AgentStore {
     func ensureDemo() {
         guard !agents.contains(where: { $0.isDemo }) else { return }
         agents.insert(DemoMarble.make(), at: 0)
-        LatticeSlots.assign(&agents)
         notify()
     }
 
@@ -155,7 +153,6 @@ final class AgentStore {
         let before = agents.count
         agents.removeAll { $0.isDemo }
         if agents.count != before {
-            LatticeSlots.assign(&agents)
             notify()
         }
     }
@@ -176,9 +173,10 @@ final class AgentStore {
         notify()
     }
 
-    func advanceAnimationTime(_ dt: Float, now: Date = Date()) {
-        for index in agents.indices where MotionEngine.shouldAdvanceTime(agents[index].status) {
-            agents[index].animationTime += dt
+    func advanceAnimationTime(_ dt: Float, now: Date = Date(), reducedMotion: Bool = false) {
+        for index in agents.indices {
+            let scale = MotionEngine.timeScale(for: agents[index].status, reducedMotion: reducedMotion)
+            agents[index].animationTime += dt * scale
         }
         releaseQueuedBlooms()
         if releaseToolHolds(now: now) {
@@ -319,7 +317,13 @@ final class AgentStore {
             )
         }
         agents.append(agent)
-        LatticeSlots.assign(&agents)
+        enforceCap()
+    }
+
+    private func enforceCap() {
+        while agents.count > LayoutEngine.maxAgents {
+            agents.removeFirst()
+        }
     }
 
     private func peek(_ event: HookEvent) -> TranscriptSnapshot {

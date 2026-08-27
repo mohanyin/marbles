@@ -9,7 +9,6 @@ final class FocusCardView: NSView {
     private let title = NSTextField(labelWithString: "")
     private let previewScroll = NSScrollView()
     private let preview = NSTextView()
-    private var chipViews: [ChipView] = []
     private let claudeButton = FocusCardView.makeAction("Open Claude Code")
     private let cursorButton = FocusCardView.makeAction("Open Cursor")
     private let terminalButton = FocusCardView.makeAction("Open Terminal")
@@ -93,7 +92,6 @@ final class FocusCardView: NSView {
         apply(cursorButton, JumpRouter.decision(.cursor, agent: agent, launcher: launcher))
         apply(terminalButton, JumpRouter.decision(.terminal, agent: agent, launcher: launcher))
         apply(conductorButton, JumpRouter.decision(.conductor, agent: agent, launcher: launcher))
-        syncChips(Chips.focusChips(for: agent))
         needsLayout = true
     }
 
@@ -115,16 +113,8 @@ final class FocusCardView: NSView {
         preview.textContainer?.containerSize = NSSize(width: inner, height: CGFloat.greatestFiniteMagnitude)
         preview.frame.size.width = inner
 
-        var x = pad
-        let chipY = y + previewHeight + 10
-        let chip: CGFloat = 22
-        for view in chipViews {
-            view.frame = NSRect(x: x, y: chipY, width: chip, height: chip)
-            x += chip + 6
-        }
-
         var buttonX = pad
-        var buttonY = chipY + chip + 12
+        var buttonY = y + previewHeight + 12
         let maxX = bounds.width - pad
         for button in [claudeButton, cursorButton, terminalButton, conductorButton] where !button.isHidden {
             button.sizeToFit()
@@ -151,21 +141,6 @@ final class FocusCardView: NSView {
         button.isHidden = !decision.visible
         button.isEnabled = decision.enabled
         button.toolTip = decision.tooltip
-    }
-
-    private func syncChips(_ kinds: [ChipKind]) {
-        while chipViews.count < kinds.count {
-            let view = ChipView(frame: .zero)
-            chipViews.append(view)
-            addSubview(view)
-        }
-        while chipViews.count > kinds.count {
-            chipViews.removeLast().removeFromSuperview()
-        }
-        for (view, kind) in zip(chipViews, kinds) {
-            view.kind = kind
-            view.fade = 1
-        }
     }
 
     private static func makeAction(_ title: String) -> NSButton {

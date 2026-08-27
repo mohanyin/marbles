@@ -10,6 +10,7 @@ enum StatusTests {
         cursorAskIsDropped()
         injectThenClearLeavesLive()
         resumeKeepsSeed()
+        rosterCapsAt50()
         emptySessionStartIsHidden()
         titledTranscriptAppearsOnStart()
         abandonedEmptyChatDoesNotLinger()
@@ -123,12 +124,22 @@ enum StatusTests {
         let store = makeStore()
         store.apply(event("UserPromptSubmit", session: "resume-me"))
         let seed = store.agents[0].seed
-        let slot = store.agents[0].latticeIndex
         store.apply(event("SessionStart", session: "resume-me", extra: ["source": "resume"]))
         TestRun.expectEqual(store.agents[0].seed, seed)
-        TestRun.expectEqual(store.agents[0].latticeIndex, slot)
+        TestRun.expectEqual(store.agents[0].id, "resume-me")
         TestRun.expectEqual(store.agents[0].status, .idle)
         TestRun.expect(store.agents[0].currentTool == nil, "resume clears tool")
+    }
+
+    @MainActor
+    private static func rosterCapsAt50() {
+        let store = makeStore()
+        for index in 0..<51 {
+            store.apply(event("UserPromptSubmit", session: "cap-\(index)"))
+        }
+        TestRun.expectEqual(store.agents.count, 50, "hard cap")
+        TestRun.expect(!store.agents.contains { $0.id == "cap-0" }, "oldest insertion evicted")
+        TestRun.expect(store.agents.contains { $0.id == "cap-50" }, "newest kept")
     }
 
     @MainActor

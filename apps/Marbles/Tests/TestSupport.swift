@@ -26,30 +26,22 @@ enum TestRun {
     }
 }
 
-func clusterLayout(_ agents: [Agent]) -> LayoutResult {
-    LayoutEngine.layout(
-        agents: agents,
-        mode: .cluster,
-        orientation: LineOrientation(axis: .vertical, indexIncreasesAlongPositive: true),
-        scrollOffset: 0,
-        availableLineLength: 900,
-        cardTowardPositivePerpendicular: true
-    )
-}
-
-func lineLayout(_ agents: [Agent], mode: OverlayMode = .active) -> LayoutResult {
+func dockLayout(
+    _ agents: [Agent],
+    mode: OverlayMode = .dock,
+    scrollOffset: CGFloat = 0,
+    available: CGFloat = 900
+) -> LayoutResult {
     LayoutEngine.layout(
         agents: agents,
         mode: mode,
-        orientation: LineOrientation(axis: .vertical, indexIncreasesAlongPositive: true),
-        scrollOffset: 0,
-        availableLineLength: 900,
-        cardTowardPositivePerpendicular: true
+        orientation: LineOrientation(axis: .vertical, indexIncreasesAlongPositive: false),
+        scrollOffset: scrollOffset,
+        availableLineLength: available,
+        cardTowardPositivePerpendicular: false
     )
 }
 
 func agents(count: Int) -> [Agent] {
-    var next = (0..<count).map { Agent.debugDummy(index: $0) }
-    LatticeSlots.assign(&next)
-    return next
+    (0..<count).map { Agent.debugDummy(index: $0) }
 }

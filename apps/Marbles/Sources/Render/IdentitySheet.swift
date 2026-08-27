@@ -5,8 +5,8 @@ enum IdentitySheet {
     static let columns = 6
 
     static func write(using renderer: MarbleRenderer, to directory: URL) -> [URL] {
-        let sections = InteriorFamily.allCases.map { family in
-            MarbleSheetSection(title: family.displayName, seeds: Identity.seeds(for: family, count: perFamily))
+        let sections = (Identity.minColors...Identity.maxColors).map { count in
+            MarbleSheetSection(title: "\(count) colors", seeds: Identity.seeds(colorCount: count, count: perFamily))
         }
         var urls: [URL] = []
         let jobs: [(name: String, tile: CGFloat, background: NSColor)] = [

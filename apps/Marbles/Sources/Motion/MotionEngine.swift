@@ -18,8 +18,16 @@ enum MotionEngine {
     static let errorEase: TimeInterval = 0.25
     static let maxConcurrentBlooms = 4
 
-    static func shouldAdvanceTime(_ status: AgentStatus) -> Bool {
-        status == .working || status == .thinking
+    static func timeScale(for status: AgentStatus, reducedMotion: Bool = false) -> Float {
+        if reducedMotion { return 0 }
+        switch status {
+        case .working, .thinking:
+            return 1.5
+        case .waitingOnUser:
+            return 0.25
+        case .idle, .finished, .error:
+            return 0.05
+        }
     }
 
     static func bloomEnvelope(startedAt: Date?, now: Date) -> Float {

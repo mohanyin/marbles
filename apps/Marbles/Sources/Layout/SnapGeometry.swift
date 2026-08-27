@@ -1,6 +1,6 @@
 import AppKit
 
-enum LineAxis {
+enum LineAxis: Equatable {
     case horizontal
     case vertical
 }
@@ -34,12 +34,26 @@ enum SnapGeometry {
         }
     }
 
+    /// Place the dock at the snap midpoint. Panel origin is derived from the dock frame.
+    static func panelOrigin(snap: SnapState, dockFrame: CGRect, panelSize: CGSize, screen: NSScreen) -> CGPoint {
+        panelOrigin(snap: snap, dockFrame: dockFrame, panelSize: panelSize, safe: safeFrame(of: screen))
+    }
+
+    static func panelOrigin(snap: SnapState, dockFrame: CGRect, panelSize: CGSize, safe: NSRect) -> CGPoint {
+        let dockOrigin = panelOrigin(snap: snap, panelSize: dockFrame.size, safe: safe)
+        return CGPoint(x: dockOrigin.x - dockFrame.minX, y: dockOrigin.y - dockFrame.minY)
+    }
+
     static func resolveRelease(panelFrame: NSRect, screen: NSScreen) -> SnapState {
         resolveRelease(panelFrame: panelFrame, safe: safeFrame(of: screen))
     }
 
     static func resolveRelease(panelFrame: NSRect, safe: NSRect) -> SnapState {
         .snap(nearestPoint(panelOrigin: panelFrame.origin, panelSize: panelFrame.size, safe: safe))
+    }
+
+    static func resolveDockRelease(dockFrame: NSRect, screen: NSScreen) -> SnapState {
+        .snap(nearestPoint(panelOrigin: dockFrame.origin, panelSize: dockFrame.size, safe: safeFrame(of: screen)))
     }
 
     static func lineOrientation(snap: SnapState, panelOrigin: CGPoint, panelSize: CGSize, screen: NSScreen) -> LineOrientation {
@@ -64,20 +78,14 @@ enum SnapGeometry {
                 best = (point, distance)
             }
         }
-        return best?.0 ?? .bottomRight
+        return best?.0 ?? .right
     }
 
     static func orientation(for point: SnapPoint) -> LineOrientation {
         switch point {
-        case .left, .right, .topLeft, .topRight, .bottomLeft, .bottomRight:
-            let increasesUp: Bool
-            switch point {
-            case .top, .topLeft, .topRight:
-                increasesUp = false
-            default:
-                increasesUp = true
-            }
-            return LineOrientation(axis: .vertical, indexIncreasesAlongPositive: increasesUp)
+        case .left, .right:
+            // Insertion order starts at the top of a vertical dock.
+            return LineOrientation(axis: .vertical, indexIncreasesAlongPositive: false)
         case .top, .bottom:
             return LineOrientation(axis: .horizontal, indexIncreasesAlongPositive: true)
         }
@@ -92,14 +100,17 @@ enum SnapGeometry {
         let yMid = safe.midY - size.height / 2
 
         switch point {
-        case .topLeft: return CGPoint(x: xLeft, y: yTop)
         case .top: return CGPoint(x: xMid, y: yTop)
-        case .topRight: return CGPoint(x: xRight, y: yTop)
         case .left: return CGPoint(x: xLeft, y: yMid)
         case .right: return CGPoint(x: xRight, y: yMid)
-        case .bottomLeft: return CGPoint(x: xLeft, y: yBottom)
         case .bottom: return CGPoint(x: xMid, y: yBottom)
-        case .bottomRight: return CGPoint(x: xRight, y: yBottom)
+        }
+    }
+
+    static func cardTowardPositive(for point: SnapPoint) -> Bool {
+        switch point {
+        case .left, .bottom: return true
+        case .right, .top: return false
         }
     }
 }

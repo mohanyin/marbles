@@ -11,19 +11,18 @@
 
 ## 1. Summary
 
-Marbles is a native Mac overlay that represents every local Claude Code agent as a floating, photorealistic marble on the desktop. The marbles stay above other apps — like Dock icons or Android chat heads — so you can glance at agent activity while reading a Google Doc, sitting in Slack, or otherwise looking away from the terminal and the Claude Code app.
+Marbles is a native Mac overlay that represents every local Claude Code agent as a floating, opaque gem-smoke marble on the desktop. The marbles stay above other apps — like Dock icons or Android chat heads — so you can glance at agent activity while reading a Google Doc, sitting in Slack, or otherwise looking away from the terminal and the Claude Code app.
 
-Each marble is procedurally generated and visually distinct. While an agent is working, its marble subtly animates. When the agent finishes, the marble freezes and signals completion in a way that is obvious from across the room. Small iconographic chips communicate thinking and tool calls without requiring you to read text.
+Each marble is procedurally generated and visually distinct. Status shows up as animation speed and a 3-light matrix after each marble. Completion bloom and error hue on the orb itself are later chrome.
 
-The product has three interaction modes:
+The product has two interaction modes:
 
-1. **Cluster** (default) — agents pack into a compact isometric 3×3×3 lattice.
-2. **Active** — the cluster expands into a line so you can pick one agent.
-3. **Focus** — a single agent opens a preview and shortcuts into Claude Code, Terminal, or Conductor, with an optional reply field.
+1. **Default** — agents sit in a line inside a pill-shaped glass dock at an edge midpoint.
+2. **Focus** — a single agent opens a preview and shortcuts into Claude Code, Terminal, or Conductor.
 
 Installation must be completable by any software engineer in under five minutes.
 
-Visual north star: [references/marble-visual-reference.png](references/marble-visual-reference.png).
+Visual north star: [references/marble-visual-reference.png](references/marble-visual-reference.png). Default dock posture: the screenshot in this overhaul (36pt marbles in a glass pill).
 
 ---
 
@@ -50,10 +49,10 @@ Marbles is that glanceable HUD.
 ## 3. Goals
 
 1. Keep every live local agent visible above other apps at all times.
-2. Make identity instant: you should recognize “the orange silk one” without reading a label.
+2. Make identity instant: you should recognize “the teal swirl one” without reading a label.
 3. Make status glanceable at 36×36: working, thinking, tool-in-flight, waiting, finished, error.
 4. Get from “I see the marble” to “I’m in that agent’s surface” in one or two clicks.
-5. Stay out of the way. Cluster mode is a small corner ornament, not a dashboard.
+5. Stay out of the way. Default mode is a slim midpoint dock, not a dashboard.
 6. Install in under five minutes, including wiring Claude Code hooks.
 
 ### 3.1 Non-goals (v1)
@@ -77,7 +76,7 @@ Marbles is that glanceable HUD.
 | --- | --- |
 | Peripheral monitoring | From Slack or a doc, I can tell which agents are busy vs. done without switching apps. |
 | Identify an agent | I pick the right marble by appearance, not by reading a project path. |
-| Inspect one agent | I expand the cluster, click one marble, and see what it is doing. |
+| Inspect one agent | I click a marble in the dock and see what it is doing. |
 | Jump back in | From Focus I open the correct Claude Code window, terminal, or Conductor workspace. |
 | Reply without fully context-switching | If possible, I send a short reply to the agent’s latest question from Focus. |
 
@@ -86,8 +85,8 @@ Marbles is that glanceable HUD.
 ## 5. Product principles
 
 1. **Glance first.** If a status needs a paragraph, it failed. Prefer motion, color, and icons.
-2. **Physical objects, not avatars.** Marbles are glass spheres with interiors, not emoji or user initials.
-3. **Stay above, stay small.** Never steal the screen. Cluster mode is a corner. Focus is a compact card, not a panel that covers Slack.
+2. **Physical objects, not avatars.** Marbles are opaque gem-smoke discs, not emoji or user initials.
+3. **Stay above, stay small.** Never steal the screen. Default is a slim edge dock. Focus is a compact card, not a panel that covers Slack.
 4. **One marble, one agent.** v1: one circle per parent session. Subagents are chips or satellites, never a second marble.
 5. **Local and quiet.** No telemetry. Hooks must never block Claude Code. If Marbles is quit, agents keep working.
 6. **Install is a feature.** A clever HUD that takes 30 minutes to wire is a failed product.
@@ -96,39 +95,32 @@ Marbles is that glanceable HUD.
 
 ## 6. Modes
 
-### 6.1 Cluster (default)
+### 6.1 Default (dock)
 
-Agents appear as a packed **isometric 3×3×3 lattice** — a small cube of spheres on the desktop. This is the idle, always-on posture.
+Agents appear as a **line of 36×36 pt marbles inside a pill-shaped glass dock**. This is the idle, always-on posture.
 
-- Each marble is **36×36 pt** in this mode (Retina: 72×72 backing pixels). That is a hard layout cap, not a suggestion.
-- The whole cluster should read as one object, similar to a pile of marbles in a tray, not a spreadsheet of icons.
-- Occupied slots only. Empty lattice positions are not drawn.
-- **Sticky slots:** `session_id` maps to a lattice index for the life of that marble (including the 30–60s SessionEnd linger). Removing an agent must not shift the others. Vacated indices are reused by the next new agent.
-- Capacity: **27 lattice slots**. If more than 27 agents are live (linger counts), show **26 identity marbles + one `+N` overflow marble** in the **rightmost slot of the front / top lattice layer** (`x:2, y:0, z:0`). Evict the non-focused agent with the oldest `lastEventAt` (not spatial “furthest”), and keep that overflow slot free of an identity marble. The overflow marble is not a seeded identity. Clicking it enters Active with the full scrollable list.
-- Clicking a **marble, chip, or the overflow marble** enters Active mode. Gaps between spheres click through to the desktop. “The cluster” means the union of those circles, not the bounding box.
-- The cluster is the snap-friendly form: it docks to corners and edge midpoints (see §7).
+- Marble diameter is **36pt** (Retina: 72×72 backing pixels). Hard cap; same size in Focus.
+- Dock padding is **10pt** on every side of the marble.
+- Reserve **4pt** between the marble and its 3-light row, then **12pt** from that row to the next marble. Lights are **3×3pt** with **1pt** gaps (row is 11pt). Item stride = **55pt**.
+- Occupied dock thickness = `10 + 36 + 10` = **56pt**.
+- The dock is **`NSGlassEffectView`** (`.regular`, adaptive). No extra stroke or border beyond the system glass.
+- **Insertion order.** New agents append. When an agent leaves, neighbors slide closed. No sticky holes.
+- **Capacity:** hard cap **50** agents (oldest insertion evicted). **9** marbles visible; after that the dock scrolls along its axis and **snaps to items**. No `+N` overflow marble.
+- Autoscroll to **newly inserted** agents when not focused. Do **not** autoscroll when an agent finishes.
+- Hover a marble to enter Focus. Hovering another marble switches Focus.
+- The dock (glass + marbles) is the snap-friendly form: edge midpoints only (see §7).
+- Empty overlay: a tiny glass pill **10×36pt** (10pt thick, 36pt along the edge), still centered on the snap midpoint.
+- Clicks on the glass (not a marble) drag the dock. Clicks outside the pill pass through to the desktop.
 
-**Why isometric, not a flat 3×3:** a flat grid looks like a dock. An isometric pile matches the physical-marble metaphor and keeps the footprint small while still showing depth when many agents are running.
+### 6.2 Focus
 
-### 6.2 Active
-
-The lattice unfolds into a **single line** so you can target one agent.
-
-- Click a marble to enter Focus for that agent.
-- Click empty desktop / press `Esc` to collapse back to Cluster.
-- Layout **adapts to snap position** (see §7.2).
-- Marbles grow to **60×60 pt** so they are easier to hit, but they should still feel like the same objects.
-- Hovering a marble previews the current tool icon + a one-line status without entering Focus. No permanent project-name captions under Cluster/Active marbles.
-
-### 6.3 Focus
-
-Selecting one marble opens a compact HUD anchored to that marble.
+Hovering a marble opens a compact HUD anchored to that marble. The dock stays visible. Marbles stay **36pt**. No dimming (a later pass will add a different highlight).
 
 **Must show**
 
-- The focused marble, still animated/frozen according to live state.
+- The focused marble, still animating at its status speed, in the dock.
 - A short preview of current work, **first matching**: (1) “Waiting for you” if `waitingOnUser`, (2) current tool line (“Editing `AuthService.swift`”) if a tool is in flight, (3) truncated latest assistant text, else (4) “Working…” / “Done” / “Something went wrong” from status.
-- Recent activity as icon chips (same vocabulary as §9).
+- The same 3-light matrix stays on the marble in the dock. No icon chips on the card.
 - Actions:
   - **Open Claude Code** — bring the matching Claude Code desktop session / window forward.
   - **Open Terminal** — bring the matching terminal / iTerm / Ghostty / kitty tab or pane forward when we can resolve it; otherwise open a new terminal in the session cwd.
@@ -140,19 +132,18 @@ Selecting one marble opens a compact HUD anchored to that marble.
 - Become a second Claude Code. No full transcript, no file tree, no diff reviewer.
 - Cover the whole screen. Target size: roughly a large tooltip / small popover (≤360pt wide).
 
-**Exit:** click the focused marble again, click outside the popover (pass-through), or press `Esc` → Active. From Active, `Esc` or click outside → Cluster. Clicking a *different* marble while in Focus **switches** Focus to that agent (does not collapse).
+**Exit:** hover off the dock and card, click outside (desktop or dock glass), or press `Esc` → Default. Hovering dock chrome or the card keeps Focus. Hovering or clicking a *different* marble **switches** Focus. Clicking the focused marble stays in Focus. Autoscroll so the focused marble stays in the 9-visible window. No dragging the dock while focused; dock glass dismisses Focus instead.
 
-### 6.4 Mode transitions
+### 6.3 Mode transitions
 
 | From | To | Trigger | Motion |
 | --- | --- | --- | --- |
-| Cluster | Active | Click cluster | Lattice unpacks into a line; 240–320ms spring |
-| Active | Cluster | Esc / click outside | Line packs back into lattice |
-| Active | Focus | Click one marble | Other marbles dim/recede; popover grows from the marble |
-| Focus | Active | Esc / click outside popover | Popover collapses |
-| Any | Cluster | Drag to a new snap point | Optional: collapse first so snapping stays predictable |
+| Default | Focus | Hover a marble | Popover grows from that marble; 240–320ms spring |
+| Focus | Focus (other) | Hover or click a different marble | Card retargets; autoscroll if needed |
+| Focus | Default | Esc / click focused marble / click outside / click dock glass | Popover collapses |
+| Default | Default (new snap) | Drag dock glass or a marble ≥4pt, release | Dock snaps to nearest midpoint |
 
-Transitions must be interruptible. Users who click Cluster → marble quickly should land in Focus without waiting for Active to finish.
+Transitions must be interruptible. Hover never opens Focus from Default.
 
 ---
 
@@ -160,70 +151,60 @@ Transitions must be interruptible. Users who click Cluster → marble quickly sh
 
 The overlay is an always-on-top floating panel that joins every Space and sits above full-screen apps where the OS allows (`NSPanel` at a high window level, `canJoinAllSpaces` + `fullScreenAuxiliary`).
 
-### 7.1 Cluster snap targets
+### 7.1 Dock snap targets
 
-Cluster mode snaps to **eight points** on the current display:
-
-- Four corners: top-left, top-right, bottom-left, bottom-right
-- Four edge midpoints: top, bottom, left, right
+Default mode snaps to **four edge midpoints** on the current display: top, bottom, left, right. **No corners.**
 
 Behavior:
 
-- Drag anywhere on the cluster (not just a chrome handle).
-- Release always locks to the **nearest of the eight targets**. There is no free-place rest position.
-- Persist the snap point per display. Multi-monitor: the cluster lives on the display it was last dropped on.
+- Drag the dock glass or a marble (not while Focused). Release always locks to the **nearest of the four midpoints**. There is no free-place rest position.
+- Persist the snap point per display. Multi-monitor: the dock lives on the display it was last dropped on.
 - Avoid the menu bar, Notch, Dock, and Stage Manager strip. Snap points inset by safe-area padding (~12pt).
+- First launch and legacy corner values migrate to **right**.
+- The pill is **always centered** on the midpoint as it grows from empty → 1 → 9 visible marbles.
 
-### 7.2 Active-mode orientation
+### 7.2 Dock orientation
 
-When entering Active, the line **orients from the current snap / nearest edge**:
+The line **orients from the locked snap point**:
 
-| Position | Active layout |
+| Position | Dock layout |
 | --- | --- |
-| Left edge midpoint | Vertical line, growing inward (to the right) |
-| Right edge midpoint | Vertical line, growing inward (to the left) |
-| Bottom edge midpoint | Horizontal line, growing inward (up) |
-| Top edge midpoint | Horizontal line, growing inward (down) |
-| Any corner | **Vertical line**, growing inward along the nearest vertical edge |
+| Left midpoint | Vertical line, thickness grows inward (right); insertion order starts at the top |
+| Right midpoint | Vertical line, thickness grows inward (left); insertion order starts at the top |
+| Bottom midpoint | Horizontal line, thickness grows inward (up); insertion order starts at the left |
+| Top midpoint | Horizontal line, thickness grows inward (down); insertion order starts at the left |
 
-Corner → vertical is an explicit product decision: corners should feel like a side stack (Dock-on-the-side), not a taskbar.
-
-If the line would overflow the display, it scrolls with a fade, or wraps once as a second rank. It must never go off-screen without a way to reach every marble.
+If the line would overflow 9 visible marbles, it scrolls along the line axis and snaps to items. It must never go off-screen without a way to reach every marble.
 
 ### 7.3 Focus anchoring
 
-The Focus popover opens toward the interior of the screen — never off the display, never over the Notch. If the marble is on the left edge, the card opens to the right, and so on.
+The Focus popover opens toward the interior of the screen — never off the display, never over the Notch. If the marble is on the left edge, the card opens to the right, and so on. The card attaches to the **marble**, not the pill. The dock stays pinned to the snap midpoint when the card appears.
 
 ### 7.4 Window behavior
 
-- Clicks on marbles and the Focus card are interactive.
-- Clicks on fully transparent pixels pass through to apps beneath, so a 3×3×3 cluster does not create a large invisible hit rectangle.
+- Clicks on marbles, dock glass, and the Focus card are interactive.
+- Clicks outside the pill (Default) pass through to apps beneath.
 - The app has no Dock-occupying document windows in normal use. A menu-bar extra (tiny marble or status item) is acceptable for Quit / Preferences / Install hooks.
 - Hide-on-Cmd-H should *not* hide Marbles, even when Marbles is key for the Focus reply field. Provide an explicit “Hide Marbles” in the menu bar instead.
 
 ---
 
-## 8. Visual design — frosted marbles
+## 8. Visual design — gem-smoke marbles
 
 ### 8.1 North star
 
-Treat [references/marble-visual-reference.png](references/marble-visual-reference.png) as binding for material quality, not as a sprite sheet to copy.
-
-The reference shows glass spheres on black: sharp speculars, colored inner glow, and interiors that look like captured fluids, crystals, or tiny worlds. Marbles are physical objects, not flat badges.
+Each marble is an **opaque circle** whose interior is the [Paper Shaders gem-smoke](https://github.com/paper-design/shaders/blob/main/packages/shaders/src/shaders/gem-smoke.ts) field. Distortion inside the circle gives a 3D impression; there is no glass shell, no Fresnel sphere, and **no per-marble `NSGlassEffectView`**. The dock pill is the only glass.
 
 ### 8.2 Material recipe
 
-Every marble is a **glass shell + interior volume + lighting**:
-
 | Layer | Look |
 | --- | --- |
-| Shell | Clear / lightly frosted dielectric. Fresnel rim. One hard specular (typically upper-left) plus a softer secondary bounce. |
-| Frost | Micro-roughness and a thin cloudy film so they read as “frosted marble,” not a soap bubble or a chrome ball. Frost amount varies by identity. |
-| Interior | A unique procedural field: silk ribbons, oil-slick iridescence, cellular/crystalline cracks, nebula clouds, prismatic shafts, or a miniature landscape. Interiors are the identity. |
-| Glow | Subtle colored bleed into the desktop so the marble lifts off whatever is behind it. |
-| Contact | Optional soft ground shadow / occlusion so a pile of marbles feels stacked, not composited stamps. |
+| Shape | Circle that **fills** the 36pt marble. Shader `scale` is unused. |
+| Interior | Gem-smoke gradient (3–5 colors) swirling inside the circle. `outerGlow` is off — no smoke outside the disc. |
+| Body | Opaque. `colorBack` fills any gaps in the smoke so the disc is never a see-through stamp. |
+| Dock | Adaptive `NSGlassEffectView` (`.regular`). Marbles sit on the pill, not on a painted plate. |
 
-Photorealistic *enough*: convincing at 36pt on a Retina display. Not offline path-traced. A real-time Metal (or SceneKit / custom shader) path is expected.
+Real-time Metal, instanced, one look at 36pt.
 
 ### 8.3 Identity — procedural generation
 
@@ -231,100 +212,98 @@ Marbles are **seeded**, not hand-drawn.
 
 - Seed from a stable agent id (`session_id`, falling back to a hash of cwd + started_at).
 - The same agent always gets the same marble for the life of that session, and ideally across resume.
-- Diversity must be high enough that 9 agents on screen are not “nine slightly different blue orbs.” Vary **hue, interior family, frost, inclusion density, and luminosity** independently.
+- Diversity must be high enough that 9 agents on screen are not “nine slightly different orbs.”
 
-**Interior families** (from the reference, used as a generator palette):
+Seeded uniforms (unrestricted palette for now; refine later):
 
-1. **Silk / fluid** — swirling ribbons, cream-into-fire, oil-on-water.
-2. **Crystalline / cellular** — cracked ice, scales, lattice, gold-to-teal.
-3. **Prismatic** — internal rainbow shafts, caustic streaks.
-4. **Nebula** — soft gas clouds, pearlescent gradients.
-5. **Landscape / cameo** — a compressed scenic interior (moons, ridges). Use sparingly; it is the most memorable family.
-6. **Core / inclusion** — mostly clear glass with a geometric or mineral heart.
+| Uniform | Range | Notes |
+| --- | --- | --- |
+| `colors` | 3, 4, or 5 RGBA | Random RGB, alpha 1 |
+| `colorBack` | RGBA | Seeded; alpha 1 so the disc is opaque |
+| `colorInner` | RGBA | Seeded but unused for the interior (shader leftover; pick anything) |
+| `innerDistortion` | 0.1…0.8 | Swirl strength |
+| `size` | 0.7…1.0 | Smoke feature scale, not the circle |
+| `angle` | 0…360° | Smoke direction |
 
-Do not map family → status. Family is identity. Status is communicated by motion and chips (see §9), so a “fire silk” marble can be idle, working, or done without changing species.
+Do not map palette → status. Palette is identity. Status is motion speed and chips (see §9).
 
 ### 8.4 Legibility on real desktops
 
-The reference is on black. Real desktops are light docs, busy Figma files, and wallpaper.
-
-- Marbles must remain readable on light *and* dark backgrounds (rim light + faint backdrop blur behind the cluster is allowed).
-- Do not draw a permanent black plate behind the cluster. The desktop should show through.
-- Minimum contrast: a white or light marble still needs a visible rim on a white Google Doc.
+- Marbles must remain readable on light *and* dark backgrounds (the adaptive glass dock is the backdrop).
+- The dock uses system liquid glass, not a painted black plate.
+- Because marbles are opaque, a pale marble still reads on a white Google Doc without a glass rim.
 
 ### 8.5 Scale
 
 | Mode | Marble size | Notes |
 | --- | --- | --- |
-| Cluster | **36×36 pt** | Hard cap |
-| Active | **60×60 pt** | Same asset, larger hit target |
-| Focus | **72×72 pt** | Hero marble in the popover |
+| Default | **36×36 pt** | Hard cap; dock padding 10pt |
+| Focus | **36×36 pt** | Same size in the dock; card is separate |
 
-Shaders must look good at all three sizes. Avoid features that vanish at 36pt (hairline cracks, 2pt text inside the sphere).
+Shaders must look good at 36pt. Avoid features that vanish at 36pt.
 
 ---
 
 ## 9. Motion, completion, and indicators
 
-These rules apply in **every mode**. Cluster is not allowed to become a static pile that only “comes alive” after you click.
+These rules apply in **every mode**. Default is not allowed to become a static pile that only “comes alive” after you click.
 
 ### 9.1 Agent activity → marble motion
 
-| Agent state | Marble |
-| --- | --- |
-| Working (tools in flight) | Interior slowly advects: silk drifts, nebula boils, crystals catch light. Specular may creep. Amplitude stays subtle — living object, not a loading spinner. |
-| Thinking (model inference, no current tool) | Slower, deeper pulse of inner luminosity. Surface mostly still. Optional faint “breathing” frost. |
-| Waiting on user / permission | Motion pauses mid-swirl. A persistent attention chip (see below). |
-| Finished / turn complete | **Freeze.** Interior locks. Specular holds. The object becomes a still photograph of itself. |
-| Error / crashed session | Freeze, then apply a full-marble **red hue filter** over the existing identity (the silk/crystal/landscape is still recognizable, just shifted into red). No cracks, fractures, or error badges on the art. The filter eases on (~250ms) and stays until the session recovers or is dismissed. |
+Gem-smoke `u_time` accumulates at a **status speed**. Never reset `animationTime` to 0 when status changes — a new turn continues from the last pose.
 
-When a new turn starts, motion resumes from the frozen pose — do not randomize the interior on every turn.
+| Agent state | Time scale |
+| --- | --- |
+| Working (tools in flight) | **1.5×** |
+| Thinking (model inference, no current tool) | **1.5×** |
+| Waiting on user / permission | **0.25×** |
+| Idle, finished, error | **0.05×** |
+| Reduce Motion (pref or system) | **0** — freeze the current pose |
+
+Status chrome on the orb (freeze-as-photograph, completion bloom, error hue) is **deferred**. The 3-light matrix is the glanceable status now (see §9.3).
 
 ### 9.2 Finished — noticeable in every mode
 
-“Freeze” alone is too quiet if you are reading Slack. Completion needs a **one-shot signal** that works at Cluster scale:
+Finished is **all three lights green** plus 0.05× smoke. Orb bloom / check-chip chrome is **deferred**. The intended later signal:
 
 1. Motion eases to a stop.
 2. A brief completion bloom: rim-light flash, a single expanding glass ring, or a caustic sweep (~400–700ms).
 3. A settled “done” rest state: slightly brighter rim or a small resolved check chip that remains until the next turn or until dismissed.
 4. Optional OS notification and/or a very short tactile sound, off by default or following macOS notification settings.
 
-The completion signal must be visible when the cluster is 36pt in a corner. If you cannot see “done” without entering Active, it failed.
+The completion signal must be visible when the dock is 36pt at a midpoint. If you cannot see “done” without entering Focus, it failed.
 
 If several agents finish in a short window, stagger the blooms so the cluster does not strobe.
 
-### 9.3 Thinking and tool-call indicators
+### 9.3 Three-light matrix
 
-Status is **icon-first**. Prefer a small chip on the marble’s rim or in a tight orbit over text.
+A **dot-matrix of 3 lights** sits after each marble, in Default and Focus. No SF Symbol chips.
 
-**Thinking**
-
-- Distinct from tool chips (e.g. a dim comet, ellipsis constellation, or inner-core pulse glyph).
-- Visible in Cluster. No label required.
-
-**Tool calls**
-
-Show the *current* tool as a live chip. Optionally keep the last 2–3 as a short trail that fades.
-
-| Tool / event | Icon direction |
+| Spec | Value |
 | --- | --- |
-| Thinking / inference | Pulse / comet |
-| Read | Book / file |
-| Write / Edit / NotebookEdit | Pencil |
-| Bash | Terminal chevron |
-| Grep / Glob | Magnifier |
-| WebSearch / WebFetch | Globe |
-| Task / subagent spawn | Branching node |
-| Git (`Bash` that is clearly git, or future Git tool) | Branch |
-| Permission / needs input | Question / tap |
-| Stop / turn complete | Check |
-| Tool failure | Small fault mark |
+| Light size | **3×3pt**, corner radius **0.5pt** |
+| Gap | **1pt** between lights (row length 8pt) |
+| Placement | **4pt** after the marble along the dock axis, centered on the marble |
+| Orientation | Across the dock axis: horizontal row on left/right, vertical column on top/bottom |
+| Off | Neutral gray at **30%** opacity, no glow |
+| On | `#FFFFFF` / `#00E879` / `#E84200`, plus a **4pt** outer glow at **100%** opacity in that color |
 
-MCP tools fall back to a generic plug/spark icon plus a one-letter or truncated server hint when space allows.
+| Agent state | Lights |
+| --- | --- |
+| Idle | All off |
+| Thinking (no current tool) | White **left → right wave** (first-to-last along the row) |
+| Tool call (`currentTool` set, including a failed tool) | One **stable 1- or 2-light** subset flashes white for the whole call (HDD-style). Never all three. Never red. |
+| Waiting on user | All **white** |
+| Finished | All **green** |
+| Session error | All **red** |
 
-In Cluster, show **one** live chip (current tool or thinking). In Active, show the live chip plus a short trail. In Focus, show a compact recent-activity row.
+Red is reserved for a dead run the user must deal with. A failed tool stays in the white-flash vocabulary.
 
-Chips must stay legible at 36pt: ~18pt marks sitting on the rim, not icons dropped into the interior where the silk texture will hide them.
+**Flash:** pick the subset from `session seed + tool id` so it stays put for that call. Blink ~280ms on / ~440ms off while the tool is live.
+
+**Wave:** one white light at a time, ~640ms per step, cycling 0 → 1 → 2.
+
+**Reduced motion:** freeze the current on-subset (wave holds light 0; flash holds the subset on; static states unchanged).
 
 ### 9.4 Needs-you state
 
@@ -457,7 +436,7 @@ The installer must:
 
 **Preferences (v1, small)**
 
-- Reduced motion (still freeze + completion ring + error hue; no interior advection; no attention pulse; layout snaps instead of springs)
+- Reduced motion (marble time scale 0 / freeze pose; layout snaps instead of springs)
 - Follow system Reduce Motion as well as the pref
 - Completion sound on/off
 - Show subagent satellites
@@ -496,8 +475,8 @@ This is an overlay with a handful of animated spheres, not a web dashboard wrapp
 Qualitative (v1 is a personal / small-audience tool):
 
 - Time-to-first-marble after install < 5 minutes for someone who already has Claude Code.
-- A user running ≥3 agents can identify a specific agent from Cluster without opening Active, in informal testing.
-- Finished-state recognition from a typical viewing distance (laptop at arm’s length, cluster in a corner) without entering Active.
+- A user running ≥3 agents can identify a specific agent from the Default dock without opening Focus, in informal testing.
+- Finished-state recognition from a typical viewing distance (laptop at arm’s length, dock at a midpoint) without entering Focus.
 - Jump-in from Focus reaches the correct *app* ≥90% of the time; correct *session/tab* is a stretch metric.
 
 ---
@@ -506,20 +485,20 @@ Qualitative (v1 is a personal / small-audience tool):
 
 ### M0 — Skeleton
 
-- Git repo, overlay window, drag + 8-point snap.
-- Three placeholder spheres, mode transitions (Cluster / Active / Focus) with dummy data.
+- Git repo, overlay window, drag + 4-point midpoint snap.
+- Three placeholder spheres, mode transitions (Default / Focus) with dummy data.
 
 ### M1 — Live agents
 
 - Hook installer + ingest (prefs/demo UI can be a stub; polish is M4).
 - One marble per live session; working vs. frozen vs. error (red hue filter).
-- Tool chips + thinking glyph.
+- 3-light matrix (wave / flash / white / green / red).
 - Completion bloom.
 
 ### M2 — Material
 
-- Procedural frosted-marble renderer at reference quality (36pt cluster, 60pt Active).
-- Stable seeds, ≥6 interior families, light/dark desktop legibility.
+- Gem-smoke Metal renderer (opaque 36pt discs, no per-marble glass).
+- Stable seeds, 3–5 color palettes, light/dark desktop legibility.
 
 ### M3 — Jump-in
 
@@ -535,7 +514,7 @@ Qualitative (v1 is a personal / small-audience tool):
 
 ## 17. Open questions
 
-**Decided for v1** (see ARCHITECTURE.md): sticky lattice slots; overflow is 26 + `+N`; cluster click is occupied circles only; subagents are never a second marble; no keystroke reply; demo is first-launch-only after a 2h discovery check; packed isometric lattice, not a rigid empty cube.
+**Decided for v1** (see ARCHITECTURE.md): insertion-order dock; 9 visible then scroll; hard cap 50; no `+N`; midpoint snap only (default right); hover marble focuses; hover switches; subagents are never a second marble; no keystroke reply; demo is first-launch-only after a 2h discovery check.
 
 Still open:
 
@@ -543,24 +522,26 @@ Still open:
 2. **Reply delivery path.** Official IPC vs Conductor only; both may be unavailable at ship.
 3. **Codex / other Conductor runtimes.** Cursor Agent is in v1 via native hooks. Codex-in-Conductor is later.
 4. **Notch, Stage Manager, and multiple full-screen Spaces.** Overlay policy will need device testing.
-5. **Click-marble-skips-Active** as a later experiment. v1 always goes Cluster → Active first.
+5. Refine the unrestricted gem-smoke palette.
 
 ---
 
 ## 18. Appendix A — Mode map
 
 ```text
-                    click cluster
-   ┌──────────┐  ───────────────►  ┌──────────┐  click marble  ┌──────────┐
-   │ Cluster  │                    │  Active  │ ─────────────► │  Focus   │
-   │ 3×3×3    │  ◄───────────────  │   line   │ ◄───────────── │ preview  │
-   │ isometric│   Esc / outside    └──────────┘   Esc/outside  │ + open   │
-   └──────────┘                                                └──────────┘
-        ▲
-        │  drag → snap to 4 corners + 4 edge midpoints
+                    hover marble
+   ┌──────────┐  ───────────────►  ┌──────────┐
+   │ Default  │                    │  Focus   │
+   │ glass    │  ◄───────────────  │ preview  │
+   │ pill dock│   Esc / outside /  │ + open   │
+   └──────────┘   hover off /      └──────────┘
+                  dock glass
+        ▲                                 │
+        │                                 │ hover/click other marble
+        │  drag → snap to 4 edge midpoints│ (switches Focus)
 ```
 
-Active line axis: horizontal on top/bottom edges, vertical on left/right edges **and all corners**.
+Dock axis: horizontal on top/bottom edges, vertical on left/right edges. Pill always centered on the midpoint.
 
 ---
 
@@ -570,15 +551,14 @@ Source file: `documents/references/marble-visual-reference.png`.
 
 What to steal from the frame:
 
-- Glass shells with a hard upper specular and a colored inner light.
-- Interiors that feel like matter (silk, crystal, prism, landscape), not flat fills.
-- High saturation and iridescence so identities separate at a glance.
-- Variation in *kind*, not just hue — a cracked teal marble must never be confused with a fire-silk marble even if both are “warm.”
+- Saturated, distinct interiors so identities separate at a glance.
+- Motion that feels like matter, not a spinner.
 
 What not to steal:
 
-- A black rectangular backdrop. Marbles float on the real desktop.
-- Using interior family as a status color language. Error is a **red hue filter** over the existing marble, not a different species.
+- A black rectangular backdrop. Marbles sit on the glass dock.
+- Using palette as a status color language. Status is speed + the 3-light matrix.
+- Per-marble glass discs or a transparent “sticker” look.
 - So much micro-detail that 36pt reads as noise.
 
 ---
@@ -587,11 +567,10 @@ What not to steal:
 
 | Term | Meaning |
 | --- | --- |
-| Cluster | Default isometric 3×3×3 pile. |
-| Active | Expanded line for selection. |
-| Focus | Single-agent preview + jump-in. |
-| Marble | One procedurally generated glass sphere bound to one agent. |
-| Chip | Tiny rim/orbit icon for thinking or a tool. |
+| Default | Pill-shaped glass dock of 36pt marbles at an edge midpoint. |
+| Focus | Single-agent preview + jump-in, dock still visible. |
+| Marble | One procedurally generated opaque gem-smoke disc bound to one agent. |
+| Lights | 3× 3pt matrix after each marble: wave / flash / white / green / red. |
 | Error hue | Full-marble red hue shift applied on crash/error; identity remains. |
 | Conductor | The Mac app at conductor.build for parallel local agents in git worktrees. |
 | Hook | Claude Code lifecycle callback used to stream status into Marbles. |

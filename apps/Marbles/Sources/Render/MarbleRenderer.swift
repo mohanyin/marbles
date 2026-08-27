@@ -6,31 +6,23 @@ import simd
 struct MarbleGPUInstance {
     var center: SIMD2<Float>
     var radius: Float
-    var dim: Float
-    var hue: Float
-    var saturation: Float
-    var frost: Float
-    var inclusionDensity: Float
-    var luminosity: Float
-    var secondaryHue: Float
-    var family: Float
     var time: Float
-    var noiseOffset: SIMD4<Float>
-    var advection: Float
-    var pulse: Float
-    var freeze: Float
-    var hold: Float
-    var errorHue: Float
-    var bloom: Float
-    var attention: Float
-    var rimBoost: Float
+    var colorCount: Float
+    var innerDistortion: Float
+    var size: Float
+    var angle: Float
+    var colorBack: SIMD4<Float>
+    var colorInner: SIMD4<Float>
+    var color0: SIMD4<Float>
+    var color1: SIMD4<Float>
+    var color2: SIMD4<Float>
+    var color3: SIMD4<Float>
+    var color4: SIMD4<Float>
 }
 
 struct MarbleFrameConstants {
     var viewport: SIMD2<Float>
     var pointsPerPixel: Float
-    var hasBackdrop: Float
-    var backdropPad: SIMD2<Float>
     var pad: SIMD2<Float> = .zero
 }
 
@@ -55,19 +47,15 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
     private var instances: [MarbleGPUInstance] = []
     private var constants = MarbleFrameConstants(
         viewport: SIMD2<Float>(1, 1),
-        pointsPerPixel: 1,
-        hasBackdrop: 0,
-        backdropPad: SIMD2<Float>(56, 56)
+        pointsPerPixel: 1
     )
-    private var placeholderBackdrop: MTLTexture?
 
     init?(device: MTLDevice? = MTLCreateSystemDefaultDevice()) {
         guard let device, let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.queue = queue
         super.init()
-        precondition(MemoryLayout<MarbleGPUInstance>.stride == 96)
-        placeholderBackdrop = Self.makePlaceholderTexture(device: device)
+        precondition(MemoryLayout<MarbleGPUInstance>.stride == 144)
         pipeline = Self.makePipeline(device: device)
         isReady = pipeline != nil
     }
@@ -77,9 +65,7 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         let height = max(viewport.height * scale, 1)
         constants = MarbleFrameConstants(
             viewport: SIMD2<Float>(Float(width), Float(height)),
-            pointsPerPixel: Float(1 / max(scale, 0.01)),
-            hasBackdrop: 0,
-            backdropPad: SIMD2<Float>(56, 56)
+            pointsPerPixel: Float(1 / max(scale, 0.01))
         )
         instances = items
             .sorted { $0.frame.z < $1.frame.z }
@@ -170,9 +156,7 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         instances = items
         constants = MarbleFrameConstants(
             viewport: SIMD2<Float>(Float(pixelW), Float(pixelH)),
-            pointsPerPixel: Float(1 / scale),
-            hasBackdrop: 0,
-            backdropPad: SIMD2<Float>(56, 56)
+            pointsPerPixel: Float(1 / scale)
         )
         defer {
             instances = previous
@@ -260,7 +244,6 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         var frame = constants
         encoder.setVertexBytes(&frame, length: MemoryLayout<MarbleFrameConstants>.stride, index: 1)
         encoder.setFragmentBytes(&frame, length: MemoryLayout<MarbleFrameConstants>.stride, index: 1)
-        encoder.setFragmentTexture(placeholderBackdrop, index: 0)
         if !instances.isEmpty {
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: instances.count)
         }
@@ -314,27 +297,25 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
     ) -> MarbleGPUInstance {
         let params = Identity.params(seed: agent.seed)
         let uniforms = MotionEngine.uniforms(for: agent, now: now, reducedMotion: reducedMotion, dim: dim)
+        var packed = [SIMD4<Float>](repeating: params.colors.last ?? SIMD4<Float>(1, 1, 1, 1), count: 5)
+        for (index, color) in params.colors.prefix(5).enumerated() {
+            packed[index] = color
+        }
         return MarbleGPUInstance(
             center: SIMD2<Float>(Float(center.x * scale), Float(center.y * scale)),
             radius: Float(size / 2 * scale),
-            dim: uniforms.dim,
-            hue: params.hue,
-            saturation: params.saturation,
-            frost: params.frost,
-            inclusionDensity: params.inclusionDensity,
-            luminosity: params.luminosity,
-            secondaryHue: params.secondaryHue,
-            family: Float(params.family.rawValue),
             time: uniforms.time,
-            noiseOffset: SIMD4<Float>(params.noiseOffset.x, params.noiseOffset.y, params.noiseOffset.z, params.accentHue),
-            advection: uniforms.advection,
-            pulse: uniforms.pulse,
-            freeze: uniforms.freeze,
-            hold: uniforms.hold,
-            errorHue: uniforms.errorHue,
-            bloom: uniforms.bloom,
-            attention: uniforms.attention,
-            rimBoost: uniforms.rimBoost
+            colorCount: Float(params.colors.count),
+            innerDistortion: params.innerDistortion,
+            size: params.size,
+            angle: params.angle,
+            colorBack: params.colorBack,
+            colorInner: params.colorInner,
+            color0: packed[0],
+            color1: packed[1],
+            color2: packed[2],
+            color3: packed[3],
+            color4: packed[4]
         )
     }
 
@@ -350,17 +331,6 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
         descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
         return try? device.makeRenderPipelineState(descriptor: descriptor)
-    }
-
-    private static func makePlaceholderTexture(device: MTLDevice) -> MTLTexture? {
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm_srgb,
-            width: 1,
-            height: 1,
-            mipmapped: false
-        )
-        descriptor.usage = .shaderRead
-        return device.makeTexture(descriptor: descriptor)
     }
 
     private static func loadLibrary(device: MTLDevice) -> MTLLibrary? {

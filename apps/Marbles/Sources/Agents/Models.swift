@@ -53,7 +53,6 @@ struct Agent: Identifiable, Equatable {
     var lastEventAt: Date
     var sessionEndedAt: Date?
     var seed: UInt64
-    var latticeIndex: Int?
     var isDemo: Bool
     var animationTime: Float
     var bloomStartedAt: Date?
@@ -98,7 +97,6 @@ struct Agent: Identifiable, Equatable {
             lastEventAt: lastEventAt ?? Date(),
             sessionEndedAt: nil,
             seed: seed ?? FNV.hash64(id),
-            latticeIndex: nil,
             isDemo: isDemo,
             animationTime: 0,
             bloomStartedAt: nil,
@@ -120,16 +118,26 @@ struct Agent: Identifiable, Equatable {
 }
 
 enum SnapPoint: String, Codable, CaseIterable {
-    case topLeft, top, topRight, left, right, bottomLeft, bottom, bottomRight
+    case top, left, right, bottom
+
+    static let `default`: SnapPoint = .right
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "top": self = .top
+        case "left": self = .left
+        case "right": self = .right
+        case "bottom": self = .bottom
+        default:
+            self = .right
+        }
+    }
 }
 
 enum SnapState: Codable, Equatable {
     case snap(SnapPoint)
     case free(x: Double, y: Double)
-}
-
-struct OverflowToken: Equatable {
-    var hiddenCount: Int
 }
 
 enum FNV {

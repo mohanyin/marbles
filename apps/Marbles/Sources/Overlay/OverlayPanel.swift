@@ -2,7 +2,7 @@ import AppKit
 
 /// Non-activating overlay panel. Overlay owns window level and Spaces behavior.
 final class OverlayPanel: NSPanel {
-    /// Active/Focus become key so Esc works without Input Monitoring permission.
+    /// Focus becomes key so Esc works without Input Monitoring permission.
     var allowsKey = false
 
     override var canBecomeKey: Bool { allowsKey }

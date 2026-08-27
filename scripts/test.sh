@@ -15,7 +15,6 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   -framework AppKit \
   -o "$OUT" \
   "$SRC/Agents/Models.swift" \
-  "$SRC/Agents/LatticeSlots.swift" \
   "$SRC/Agents/FixtureFiles.swift" \
   "$SRC/Identity/Identity.swift" \
   "$SRC/Agents/IngestConstants.swift" \

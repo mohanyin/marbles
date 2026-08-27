@@ -3,7 +3,7 @@
 **Status:** Draft for implementation handoff  
 **Date:** 2026-08-23  
 **Companion spec:** [PRD.md](PRD.md)  
-**Visual north star:** [references/marble-visual-reference.png](references/marble-visual-reference.png)
+**Visual north star:** Paper Shaders [gem-smoke](https://github.com/paper-design/shaders/blob/main/packages/shaders/src/shaders/gem-smoke.ts) interiors in opaque 36pt discs.
 
 This document is the implementation contract. Subagents should implement against it, not reinvent product decisions. If a change conflicts with the PRD, update the PRD first.
 
@@ -11,7 +11,7 @@ This document is the implementation contract. Subagents should implement against
 
 ## 1. Purpose and how to use this doc
 
-Marbles is a native macOS overlay: one always-on-top panel, one marble per local parent session (Claude Code or Cursor Agent), three interaction modes, hook-driven live status.
+Marbles is a native macOS overlay: one always-on-top panel, one marble per local parent session (Claude Code or Cursor Agent), two interaction modes (Default dock / Focus), hook-driven live status.
 
 Use this document to:
 
@@ -54,13 +54,13 @@ Ingest is **not** an open localhost API. `POST /hook` requires a per-machine tok
 
 ## 3. Invariants (do not violate)
 
-1. Cluster marble layout size = **36×36 pt**. Backing store may be 2×/3×.
-2. Transparent pixels **click through**. The cluster must not own a large invisible rect.
+1. Default and Focus marble layout size = **36×36 pt**. Backing store may be 2×/3×.
+2. Transparent pixels **outside the dock pill** click through. The pill itself is opaque glass.
 3. Overlay stays above other apps and joins all Spaces (`fullScreenAuxiliary` where possible).
 4. One **parent session** = one marble. Subagents are chips or satellites only. v1 never promotes a subagent to its own marble.
-5. Interior family is **identity**, never status. Status is motion, chips, completion bloom, or the error hue filter.
+5. Gem-smoke **palette** is identity, never status. Status is motion speed and the 3-light matrix (orb bloom / error hue are later chrome).
 6. Error / crash = **red hue filter** over the existing marble. No fractures, cracks, or error badges on the art.
-7. Finished = **freeze + one-shot completion bloom**, visible at Cluster scale.
+7. Finished = **freeze + one-shot completion bloom**, visible at Default dock scale.
 8. Hooks are `async` and **always exit 0**. Missing Marbles ⇒ no-op, agents keep working.
 9. No telemetry. No upload of transcripts, prompts, or tool inputs.
 10. Focus must not become a second Claude Code (no file tree, no full transcript, popover ≤360pt wide).
@@ -85,12 +85,12 @@ marbles-v2/
       App/                           # @main, AppDelegate, menu bar
       Overlay/                       # NSPanel, click-through, Spaces
       Mode/                          # ModeController, transitions
-      Layout/                        # Snap, lattice, line, safe area
+      Layout/                        # Snap, dock line, safe area
       Agents/                        # AgentStore, models, discovery
       Ingest/                        # Local listener
       Identity/                      # seed → MarbleParams
       Render/                        # Metal renderer + hue filter
-      Chips/                         # Icon chips / thinking glyph
+      Chips/                         # 3-light matrix
       Focus/                         # Popover UI, preview, actions
       JumpIn/                        # Claude Code / Cursor / Terminal / Conductor
       Hooks/                         # settings.json merge / repair / undo
@@ -139,13 +139,13 @@ Each module has one owner. Cross-module calls go through the types in §8.
 | --- | --- | --- |
 | **App** | Lifecycle, menu bar extra, first-run, permissions copy, **Debug menu** | Layout math, shaders |
 | **Overlay** | `NSPanel` level, Spaces, click-through, display changes | Mode policy |
-| **Mode** | Cluster ↔ Active ↔ Focus state machine + animation clocks | Know hook JSON |
-| **Layout** | Snap points, isometric lattice, Active axis, Focus anchor, overflow | Render pixels |
+| **Mode** | Dock ↔ Focus state machine + animation clocks | Know hook JSON |
+| **Layout** | Snap points, pill dock, Focus anchor, scroll | Render pixels |
 | **Agents** | Session lifecycle, status derivation, overflow ranking | Draw or open apps |
 | **Ingest** | Bind socket/HTTP, validate payload, ack 204 | Interpret UI |
 | **Identity** | Deterministic `session_id` → `MarbleParams` | Animate status |
-| **Render** | Draw marble + error hue + freeze + bloom uniforms | Hit-test policy |
-| **Chips** | Tool → SF Symbol / custom glyph; trail length by mode | Session identity |
+| **Render** | Draw gem-smoke discs from identity + time uniforms | Hit-test policy |
+| **Chips** | 3-light matrix from status / current tool | Session identity |
 | **Focus** | Preview card, action buttons | Hook install |
 | **JumpIn** | Activate Claude Code / Cursor / Terminal / Conductor | Change agent status |
 | **Hooks** | Idempotent merge into `~/.claude/settings.json` | Network except localhost (n/a) |
@@ -160,11 +160,11 @@ Each module has one owner. Cross-module calls go through the types in §8.
 
 **Overlay panel (always)**
 
-- `NSPanel`, **non-activating** in Cluster. Focus may become key so Esc works. No reply field.
+- `NSPanel`, **non-activating** in Default. Focus may become key so Esc works. No reply field.
 - Level: **`NSWindow.Level.statusBar`**. If a specific full-screen app covers it, do not silently bump the level; file a bug and use the documented fallback “this Space only.”
 - `collectionBehavior`: `[.canJoinAllSpaces, .fullScreenAuxiliary]`. **Do not set `.stationary`.**
 - `NSApplication.activationPolicy = .accessory` (`LSUIElement` = true). No Dock tile. Menu bar extra is the app chrome.
-- Size: **tight bounding box of visible marbles + chips + (in Focus) the popover**. Layout is the source of truth for the AABB each frame; Overlay resizes to it (inset 8pt).
+- Size: **tight bounding box of the dock pill + (in Focus) the popover**. Layout is the source of truth for the AABB each frame; Overlay resizes to it. The **dock** stays pinned to the snap midpoint; the card may extend the panel inward.
 - `ignoresMouseEvents` is **false**, but `hitTest` returns `nil` on fully transparent pixels (custom `OverlayView`).
 - Hide overlay = `orderOut` + pause the Metal display link. Show = `orderFront` + resume.
 
@@ -184,82 +184,75 @@ No document windows. No Dock tile bouncing for ordinary tool calls. Completion m
 
 ```text
 OverlayPanel
-  OverlayRootView            // hit-test pass-through
-    ClusterOrLineLayer       // marble views at Layout positions
+  OverlayRootView            // hit-test pass-through outside pill+card
+    DockGlass                // NSGlassEffectView, stadium
+    DockContent                  // marbles clipped to the pill
       MarbleView(id) × N     // Metal-backed NSView or SwiftUI representable
-      ChipView × N
-      OverflowMarble?        // +N
+      IndicatorLightsView × N
     FocusPopover?            // only in Focus; SwiftUI
 ```
 
-Mode transitions animate `MarbleFrame` (center, size, z, dim) with an interruptible spring (**280ms** settle, damping ratio ~0.85). Layout publishes target frames; Mode interpolates. On interrupt, keep current visual frame as the new start; switch the target. Reduced motion: set frames immediately.
+Mode transitions animate `MarbleFrame` (center, size, z) with an interruptible spring (**280ms** settle, damping ratio ~0.85). Layout publishes target frames; Mode interpolates. On interrupt, keep current visual frame as the new start; switch the target. Reduced motion: set frames immediately. No dimming.
 
 ### 7.3 Mode state machine
 
 ```text
-          click marble / chip / +N
-  Cluster ─────────────────────────────────────► Active
+          hover marble
+  Dock ────────────────────────────────────────► Focus
      ▲                                            │
-     │ Esc / click outside / drag-to-snap*        │ hover marble
-     │ click outside from Focus                   │
+     │ Esc / click outside / hover off / dock glass │ hover or click other marble
      └──────────────────────────────────────────  │
                                                   ▼
-                                               Focus
-                                                  │
-          Esc / click hero ───────────────────────┘  → Active
-          hover other marble while focused          → Focus(other)
+                                               Focus(other)
 ```
 
-\* Starting a drag (≥4pt slop) **collapses to Cluster first**, then snaps. A click under 4pt of movement is a click, not a drag.
+\* Starting a drag (≥4pt slop) is **Default-only**. Focus does not drag; dock glass dismisses to Default instead. A click under 4pt of movement is a click, not a drag.
 
 **Implementation type** (`Mode/`, not `Agents/`):
 
 ```swift
 enum OverlayMode: Equatable {
-  case cluster
-  case active
+  case dock
   case focus(AgentID)
 }
 ```
 
 Rules:
 
-- Cluster hit = union of marble circles + chip circles + overflow circle. Gaps pass through. Bloom-ring pixels outside the 36pt circle do **not** hit.
-- Cluster click → `.active` (do not skip to Focus in v1).
-- Fast Cluster → marble click must **interrupt** the unpack and land on `.focus`. Other marbles snap to their Active targets, then the non-hero dim (see §10.3 `dim`).
-- `Esc` is handled at the panel. Focus `Esc` → Active. Active `Esc` → Cluster.
-- Hover a marble in Active → `.focus`. Hover a different marble in Focus → switch Focus. Hovering the hero does not leave.
-- Click the focused hero marble → Active. Click a different marble in Focus → switch Focus (same as hover).
-- Click outside the popover or empty chrome always packs to Cluster, from Active or Focus.
+- Dock hit = stadium of the glass pill (marbles + chrome). Outside the pill passes through in Default.
+- Hover a marble in Default → `.focus`. Hover another marble → switch Focus. Hovering the hero, the card, or dock chrome keeps Focus. Hovering off the pill and card → Default.
+- Click a marble → `.focus` that agent (does not dismiss the hero).
+- Click dock glass in Focus → Default (no drag). Click outside the overlay → Default.
+- `Esc` is handled at the panel. Focus `Esc` → Default. Default `Esc` is a no-op.
 - `OverlayMode` lives in Mode/. `Agent` types live in Agents/.
 
 ### 7.4 Placement and snap
 
 **Snap targets (current display):**
 
-- 4 corners + 4 edge midpoints.
-- Release **always** snaps to the nearest of the 8 targets. `.free` is transient during an in-progress drag only — Cluster never rests off a snap point.
+- 4 edge midpoints only (`top`, `left`, `right`, `bottom`). No corners.
+- Release **always** snaps to the nearest of the 4 targets. `.free` is transient during an in-progress drag only.
 - Inset: `max(12, screen.auxiliaryTopLeftArea / safeArea)` plus Dock/Stage Manager visible frames. Do not hard-code 24pt.
+- Default snap: **`.right`**. Legacy corner values decode as `.right`.
 
 **Persistence:** `SnapState` keyed by **`NSScreen.deviceDescription["NSScreenNumber"]` as UInt32** (stable enough; on miss, fall back to frame-size hash). Persisted value is always `.snap(SnapPoint)`.
 
-On unplug: if the stored display is gone, move the cluster to the **main** screen’s same `SnapPoint`, or `.bottomRight` if missing.
+On unplug: if the stored display is gone, move the dock to the **main** screen’s same `SnapPoint`, or `.right` if missing.
 
-**Active orientation** (from the locked snap point):
+**Dock orientation** (from the locked snap point):
 
-| Position | Line axis | Growth |
-| --- | --- | --- |
-| Left midpoint | vertical | inward (right) |
-| Right midpoint | vertical | inward (left) |
-| Bottom midpoint | horizontal | inward (up) |
-| Top midpoint | horizontal | inward (down) |
-| Any corner | **vertical** | inward along the nearest vertical edge |
+| Position | Line axis | Growth | Order starts |
+| --- | --- | --- | --- |
+| Left midpoint | vertical | inward (right) | top |
+| Right midpoint | vertical | inward (left) | top |
+| Bottom midpoint | horizontal | inward (up) | left |
+| Top midpoint | horizontal | inward (down) | left |
 
-Active overflow: **scroll along the line axis** (scroll-wheel / two-finger / drag on the line). No second rank in v1. Never clip without a way to reach every marble.
+The pill is always **centered** on the midpoint. Dock overflow: **scroll along the line axis**, snap to items, **9 visible**. No `+N`. Never clip without a way to reach every marble.
 
-**Focus popover** opens toward screen interior, ≤360pt wide, never over the Notch.
+**Focus popover** opens toward screen interior, ≤360pt wide, never over the Notch, attached to the marble. Autoscroll the focused marble into the visible window.
 
-**Multi-display:** cluster lives on the screen it was last dropped on (last-drop is the “which display” pref — no separate picker). Recalculate snap on `NSApplication.didChangeScreenParametersNotification`. Color space: **display-P3** drawables; error-hue red is authored in P3 so it matches across HDR/SDR.
+**Multi-display:** dock lives on the screen it was last dropped on (last-drop is the “which display” pref — no separate picker). Recalculate snap on `NSApplication.didChangeScreenParametersNotification`. Color space: **display-P3** drawables; error-hue red is authored in P3 so it matches across HDR/SDR.
 
 ---
 
@@ -314,22 +307,17 @@ struct Agent: Identifiable, Equatable {
   var lastEventAt: Date
   var sessionEndedAt: Date?
   var seed: UInt64
-  var latticeIndex: Int?            // sticky 0...26
   var isDemo: Bool
   var animationTime: Float          // last shader time; never reset to 0
 }
 
 enum SnapPoint: String, Codable, CaseIterable {
-  case topLeft, top, topRight, left, right, bottomLeft, bottom, bottomRight
+  case top, left, right, bottom     // default .right; legacy corners decode as .right
 }
 
 enum SnapState: Codable {
   case snap(SnapPoint)
   case free(x: Double, y: Double)   // display-local points
-}
-
-struct OverflowToken: Equatable {
-  var hiddenCount: Int              // agents.count - 26
 }
 ```
 
@@ -337,7 +325,7 @@ struct OverflowToken: Equatable {
 
 | Event | Mutation |
 | --- | --- |
-| `SessionStart` | Upsert by `session_id`. `source` from payload `source` / `matcher`: `resume`/`compact` **revives** the same id (keep seed, latticeIndex, animationTime; clear currentTool; status `idle` until a prompt). `startup`/`fork`/`clear` = new turn history, same id if reused. |
+| `SessionStart` | Upsert by `session_id`. `source` from payload `source` / `matcher`: `resume`/`compact` **revives** the same id (keep seed, animationTime; clear currentTool; status `idle` until a prompt). `startup`/`fork`/`clear` = new turn history, same id if reused. |
 | `UserPromptSubmit` | `turnOpen = true`, `status = thinking`, `sessionEndedAt = nil`, resume `animationTime` (do not zero). |
 | `PreToolUse` | Show as `currentTool` phase `started`, `status = working`. If a chip is already live, enqueue (FIFO, cap 6). Extract summary per §11.4. Each live chip stays on screen **at least 500ms**. |
 | `PostToolUse` | Mark the first in-flight tool `succeeded`. Keep it as the live chip until the 500ms dwell elapses, then show the next queued tool (also ≥500ms) or, if the queue is empty and `turnOpen`, `status = thinking`. Push onto `recentTools` when it leaves the live slot. `Stop` / `SessionEnd` clear immediately. |
@@ -356,9 +344,9 @@ struct OverflowToken: Equatable {
 
 **Idle discovery cap:** at most **5** `discovery` agents, and only if mtime < **2 hours** *and* a matching `claude` PID exists. JSONL-only ghosts without a PID are not shown (prevents a 24h flood). Discovery never overwrites a hooked agent.
 
-**Overflow:** if `agents.filter({ !$0.isDemo }).count > 27`, Cluster shows **26 sticky identity marbles + `OverflowToken`**. The token occupies lattice index **2** (`x:2, y:0, z:0`) — the rightmost cell on the front / top layer — not a side-floating badge. Evict from the Cluster *view* (do not delete) the occupant of that slot plus the non-focused agent(s) with oldest `lastEventAt` until 26 remain. Linger agents count. Overflow click → Active with the **full** list, same sticky order, scrollable.
+**Overflow / cap:** hard cap **50** agents (oldest insertion evicted when inserting the 51st). Linger agents count. The dock shows insertion order, packs on leave, **9 visible** then scroll. No `+N` marble.
 
-**Slot assignment:** `latticeIndex` is assigned once: the lowest free index in `0...26` using traversal **front face first, then depth** — `(z, y, x)` with z=0 nearest the user. Do not sort-and-repack. `Identity.seed` = FNV-1a 64 of `session_id` UTF-8; persist as **hex string** in `seeds.json`. If `session_id` is missing, id = `"disc-" + hex(FNV(cwd + startedAt ISO8601))`.
+**Slot assignment:** array order is insertion order. Do **not** re-pack by status. `Identity.seed` = FNV-1a 64 of `session_id` UTF-8; persist as **hex string** in `seeds.json`. If `session_id` is missing, id = `"disc-" + hex(FNV(cwd + startedAt ISO8601))`.
 
 ---
 
@@ -369,36 +357,27 @@ struct OverflowToken: Equatable {
 ```swift
 struct MarbleFrame {
   var center: CGPoint               // panel coords
-  var size: CGFloat                 // 36 cluster / 60 active / 72 focus hero
-  var z: Int                        // isometric depth
-  var dim: CGFloat                  // 0...1, 0.45 for non-hero in Focus
+  var size: CGFloat                 // 36 always
+  var z: Int
+  var dim: CGFloat                  // always 0; highlight comes later
 }
 ```
 
-### 9.1 Cluster lattice
+### 9.1 Default dock
 
-Isometric **packed** 3×3×3. Empty slots are not drawn.
+Pill of 36pt marbles. Padding **10pt**. Item stack = marble 36 + 4pt gap + 3pt lights + 12pt to next marble (**55pt stride**). Max **9** visible, then scroll + snap to stride. Empty dock is **10×36pt**. Thickness when occupied = 56pt.
 
-Recommended integer coordinates `(x, y, z)` in `{0,1,2}³`, mapped with:
+Use insertion order from `AgentStore.agents`. Do **not** re-pack by status.
 
-```text
-screenX = origin.x + (x - y) * spacingX
-screenY = origin.y + (x + y) * spacingY - z * spacingZ
-```
+### 9.2 Focus line
 
-Starting values (tune, then lock in tests): `spacingX = 20`, `spacingY = 17`, `spacingZ = 14` so 36pt spheres overlap. Cluster AABB must stay ≤ 140×130 pt for a full 26+N pile.
-
-**Slot assignment:** use `Agent.latticeIndex` from §8. Do **not** re-pack by status or by sorting ids.
-
-### 9.2 Active line
-
-Place visible agents by ascending `latticeIndex` (then hidden/overflowed agents after, for the full list). Size **60pt**. **No** permanent captions. Hovering a marble in Active opens Focus; hovering another marble while focused switches so a line can be scanned.
+Same dock layout as Default (36pt, no dim). Card attaches to the hero marble, 12pt gap, toward screen interior. Autoscroll so the focused marble is among the 9 visible.
 
 ### 9.3 Hit testing
 
-Each marble’s hit region is a **circle** of `size/2`, plus chip circles, plus the overflow circle. Lattice gaps are pass-through. Hit tests the **interpolated visual** center/size this frame, not the animation target.
+Each marble’s hit region is a **circle** of `size/2` **inside the dock stadium**. Dock chrome (glass padding) is a drag handle in Default and a dismiss target in Focus. Lattice-style gaps no longer exist; the pill is opaque. Hit tests the **interpolated visual** center/size this frame, not the animation target.
 
-Drag vs click: movement ≥ **4pt** before mouse-up is a drag.
+Drag vs click: movement ≥ **4pt** before mouse-up is a drag. Disabled while Focused.
 
 ---
 
@@ -406,9 +385,7 @@ Drag vs click: movement ≥ **4pt** before mouse-up is a drag.
 
 ### 10.1 Why Metal
 
-Reference quality at 36pt needs a glass shell, frost, interior volume, specular, and a cheap post hue shift. One `MTKView` (or a single view with instanced draws) is enough for ≤27 spheres.
-
-SceneKit is an acceptable prototype in M0–M1 **only if** the uniform contract below is preserved so M2 can swap the renderer.
+Opaque gem-smoke discs at 36pt: one `MTKView`, instanced draws. Port of Paper Shaders `gem-smoke` (circle shape, interior only). No per-marble glass view. No glass-sphere raymarch.
 
 **Not allowed for v1 pixels:** pre-rendered PNG sprite sheets as the identity, CSS/WebGL in a WKWebView.
 
@@ -418,84 +395,76 @@ SceneKit is an acceptable prototype in M0–M1 **only if** the uniform contract 
 
 ```swift
 struct MarbleParams: Equatable {
-  var family: InteriorFamily        // silk, crystal, prism, nebula, landscape, core
-  var hue: Float                    // identity hue, 0...1
-  var saturation: Float
-  var frost: Float
-  var inclusionDensity: Float
-  var luminosity: Float
-  var secondaryHue: Float
-  var noiseOffset: SIMD3<Float>
-}
-
-enum InteriorFamily: UInt8, CaseIterable {
-  case silk, crystal, prism, nebula, landscape, core
+  var colors: [SIMD4<Float>]      // 3...5 RGBA, unrestricted RGB, alpha 1
+  var colorBack: SIMD4<Float>     // seeded; alpha 1
+  var colorInner: SIMD4<Float>    // seeded, unused by the disc interior
+  var innerDistortion: Float      // 0.1...0.8
+  var size: Float                 // 0.7...1.0 (smoke feature scale)
+  var angle: Float                // 0...360
 }
 ```
 
-Family table (deterministic): let `r = seed % 100`. `0-21` silk, `22-42` crystal, `43-60` prism, `61-78` nebula, `79-88` core, `89-99` landscape. Same `session_id` ⇒ same params across relaunch (`seeds.json` hex).
+Same `session_id` ⇒ same params across relaunch (`seeds.json` hex). Palette is identity, never status.
+
+Shader constants (not seeded): circle fills the marble (`scale` unused), `innerGlow = 1`, `outerGlow = 0`, `offset = 0`.
 
 ### 10.3 Frame uniforms (status, not identity)
 
 ```swift
 struct MarbleFrameUniforms {
-  var time: Float                   // Agent.animationTime; HOLD last value when frozen/waiting
-  var advection: Float              // working 1, thinking 0.35, else 0
-  var pulse: Float                  // thinking only
-  var freeze: Float                 // 1 = finished or error photograph
-  var hold: Float                   // 1 = waitingOnUser (advection 0, freeze 0 — mid-swirl hold)
-  var errorHue: Float               // 0...1, ease on 250ms, ease off 250ms on recover
-  var bloom: Float                  // 0...1 one-shot completion (caustic sweep, 400–700ms)
-  var attention: Float              // waitingOnUser; 0 if reduced motion
-  var dim: Float                    // Focus non-hero
-  var rimBoost: Float               // 0.15 settled finished rest (with check chip)
+  var time: Float                   // Agent.animationTime; never reset to 0
+  var advection: Float              // leftover chrome; shader uses time only
+  var pulse: Float
+  var freeze: Float
+  var hold: Float
+  var errorHue: Float               // deferred chrome
+  var bloom: Float                  // deferred chrome
+  var attention: Float
+  var dim: Float                    // always 0
+  var rimBoost: Float
 }
+
+MotionEngine.timeScale(status):
+  working, thinking     → 1.5
+  waitingOnUser         → 0.25
+  idle, finished, error → 0.05
+  reduced motion        → 0
 ```
 
-**Time:** Mode/W3 advances `animationTime` only while `status == working || thinking`. Finished, error, waiting, idle: **hold** the last `time`. A new `UserPromptSubmit` continues from that value. **Never assign 0** on freeze.
+**Time:** Overlay advances `animationTime += dt * timeScale`. Reduced motion does not advance. A new `UserPromptSubmit` continues from the last value. **Never assign 0** on status change.
 
-**Error hue:** post-shade hue-rotate toward red, keep luminance. Not a family swap. `StopFailure` / process death: error hue **instead of** bloom.
+**Error hue / bloom / freeze-as-photograph:** deferred. The 3-light matrix marks thinking / tool / waiting / done / error.
 
-**Reduced motion:** if pref **or** `NSWorkspace.accessibilityDisplayShouldReduceMotion`: `advection = 0`, `attention = 0`, layout **snaps** (no 240–320ms spring). Still allow `freeze`, `errorHue`, `bloom`, chips.
+**Reduced motion:** pref **or** `NSWorkspace.accessibilityDisplayShouldReduceMotion`: time scale **0** (freeze pose), layout **snaps**.
 
-**Completion:** one look — **caustic sweep**. Stagger 80–120ms; cap **4** concurrent blooms, queue the rest. Settled rest = `rimBoost` + check chip until next `UserPromptSubmit` (no manual dismiss for the check).
+**Metal lifetime:** one `MTKView`, instanced draws, device/queue/pipelines owned by Render. Color space display-P3. Same shader at 36pt.
 
-**Metal lifetime:** one `MTKView`, instanced draws, device/queue/pipelines owned by Render. Pause display link when overlay is hidden **or** every marble has `advection==0 && bloom==0 && attention==0 && errorHue` is settled. Color space display-P3. Same shader at 36 / 60 / 72pt; no extra landscape micro-detail below 60pt.
+**Desktop bleed:** the Default dock **is** an `NSGlassEffectView` (`.regular`, adaptive). No extra border. Marbles sit on the glass. Never a painted black plate. No `MarbleGlassDisc` under each marble.
 
-**Desktop bleed:** optional faint backdrop blur *behind* the cluster (private API-free: a small `NSVisualEffectView` clipped to a rounded union, very low material). Never a black plate.
+**Light/dark:** opaque discs read on a white Google Doc without a glass rim.
 
-**Light/dark:** rim light + specular must keep a pale marble visible on a white Google Doc.
+### 10.4 Three-light matrix
 
-### 10.4 Chips
+Drawn in AppKit *above* the Metal view. Same lights in Default and Focus. No icon chips on the Focus card.
 
-Drawn in AppKit/SwiftUI *above* the Metal view so icons stay sharp.
+```swift
+enum LightColor { case off, white, green, red }
 
-| Mode | Chips |
+Indicators.lights(for:now:reducedMotion:) -> [LightColor]  // always 3
+```
+
+| State | Pattern |
 | --- | --- |
-| Cluster | Exactly one: failed current tool → fault mark; else current tool; else thinking; else waiting; else finished check; else none (idle/error uses hue, no chip) |
-| Active | Live + last 2 faded (fade 2s) |
-| Focus | Recent-activity row (text allowed) |
+| Idle | `[off, off, off]` |
+| Thinking / working with no tool | White wave 0 → 1 → 2, ~640ms/step |
+| `currentTool` set | Stable 1- or 2-light subset (seed + tool id) flashes white ~280/440ms. Failed tool stays white. |
+| `waitingOnUser` | All white |
+| `finished` | All green |
+| `error` | All red |
 
-Map via `Chips.symbol(for:)`:
+Lights: 3×3pt, 1pt gap, 0.5pt corners. Off = gray @ 30%. On = `#FFF` / `#00E879` / `#E84200` + 4pt glow @ 100%. Row sits 4pt after the marble, across the dock axis. Reduced motion holds the current on-subset.
 
-| `name` | SF Symbol |
-| --- | --- |
-| thinking | `ellipsis` |
-| Read | `doc.text` |
-| Write / Edit / NotebookEdit | `pencil` |
-| Bash / Shell | `apple.terminal` |
-| Grep / Glob | `magnifyingglass` |
-| WebSearch / WebFetch | `globe` |
-| Task | `arrow.triangle.branch` (omit if a satellite exists) |
-| `mcp__*` | `powerplug` + server token = second path segment, Focus only |
-| git | `arrow.triangle.branch` if Bash `command` prefix is `git` (after optional path) |
-| permission | `questionmark` |
-| finished | `checkmark` |
-| tool fail | `exclamationmark` |
-
-Chip sits on the **lower-right rim** in screen space (does not orbit). Satellites (if pref on): up to 3 dots, 8pt, 14pt outside the rim, inherit parent identity hue, no extra motion when reduced-motion.
-
-Chip size ~18pt on the rim at cluster scale (~22pt Active, ~24pt Focus). Thinking glyph ≠ tool glyph.
+Satellites (if pref on): up to 3 dots, 8pt, 14pt outside the rim — unchanged, later.
 
 ---
 
@@ -581,7 +550,7 @@ Ingest decodes Claude stdin with `JSONDecoder.keyDecodingStrategy = .convertFrom
 | `session_id` or Cursor `conversation_id` | `sessionID` | Required; drop event if both missing |
 | `cwd` | `cwd` | Jump-in, Conductor detect |
 | `transcript_path` | `transcriptPath` | On `Stop`, read the jsonl **tail** for the latest assistant text block. Do not read on tool events. |
-| `tool_name` | `toolName` | Chips |
+| `tool_name` | `toolName` | Preview / later chips |
 | `tool_input` | `toolInputSummary` | Extract only: Read/Edit/Write → basename of `file_path`; Bash/Shell → first 40 chars of `command`; else omit. Max **80** chars. Never persist the object. |
 | `last_assistant_message` | `lastAssistantMessage` | **Do not** show as Focus copy for Claude — it is often a one-line paraphrase. Preview comes from the jsonl tail. Cursor may still use `text` when no transcript exists. |
 | `notification_type` or `type` | `notificationType` | See Claude Notification matchers |
@@ -710,7 +679,7 @@ Directory: `~/Library/Application Support/Marbles/`
 | File | Contents |
 | --- | --- |
 | `prefs.json` | `{ "version": 1, "reducedMotion": false, "completionSound": false, "satellites": true, "launchAtLogin": false, "overlayHidden": false }` |
-| `snap.json` | `{ "version": 1, "displays": { "<screenNumber>": { "snap": "bottomRight" } } }` |
+| `snap.json` | `{ "version": 1, "displays": { "<screenNumber>": { "snap": "right" } } }` |
 | `seeds.json` | `{ "version": 1, "seeds": { "<session_id>": "<hex u64>" } }` |
 | `ingest.json` | `{ "url": "http://127.0.0.1:17832/hook", "token": "<64 hex chars>" }` mode `0600` |
 
@@ -746,13 +715,13 @@ Until notarized: README step “Open anyway” (right-click) — still part of t
 
 | Layer | What |
 | --- | --- |
-| `LayoutTests` | 8 snap orientations; corner → vertical; 36pt cluster / 60pt Active; sticky slots; 27 vs 28 overflow; linger counts. Run `./scripts/test.sh`. |
+| `LayoutTests` | 4 snap orientations; 36pt dock/focus; 10pt padding; 55pt stride; 9 visible then scroll; insertion-order pack; empty 10×36; cap 50. Run `./scripts/test.sh`. |
 | `JumpInTests` | visibility by source; demo/injected disabled; missing app tooltips; Claude chat URL (never `code/new`); Cursor opens cwd; Terminal prefers a running emulator |
 | `StatusTests` | reducer table in §8; error vs finished vs waiting vs PostToolUseFailure |
-| `IdentityTests` | same seed ⇒ same params; family table over 100 seeds |
+| `IdentityTests` | same seed ⇒ same params; 3–5 colors; distortion/size ranges |
 | `HookContractTests` | helper exits 0 on refused connection and bad JSON; fixtures decode; ingest token match / reject |
 | `HooksMergeTests` | idempotent merge / undo; JSONC comments survive |
-| `MotionTests` | freeze holds `animationTime`; waiting uses `hold` not `freeze`; error skips bloom |
+| `MotionTests` | time scales 1.5 / 0.25 / 0.05; reduced motion is 0; never reset time |
 | UI | click-through gaps; bloom ring not hittable; light desktop rim; error hue |
 
 A headless “fake ingest” debug menu should inject working / thinking / finished / error agents without Claude Code.
@@ -772,7 +741,7 @@ From W1 on, the menu bar **Debug** submenu (DEBUG / `#if DEBUG` builds only) mus
 | Command | What it does |
 | --- | --- |
 | Inject 3 dummy agents | Distinct seeds, mixed statuses |
-| Inject 9 / 27 / 28 agents | Lattice depth + overflow `+N` |
+| Inject 9 / 10 / 50 agents | Nine visible, then scroll; hard cap |
 | Set selected → Working / Thinking / Waiting / Finished / Error | Drive uniforms live |
 | Fire completion bloom | One-shot even if already finished |
 | Cycle current tool | Read → Edit → Bash/Shell → Grep → Task |
@@ -786,11 +755,11 @@ Founder look-path after every stream (put this in the PR description):
 | ID | Stream | First slice | Depends on | You should be able to look at |
 | --- | --- | --- | --- | --- |
 | **W0** | Overlay panel + click-through | Empty floating panel, menu bar, pass-through hits | — | A small empty panel over Safari/Slack. Clicks on empty glass hit the app beneath. Drag the panel. Menu bar extra works. |
-| **W1** | Mode + Layout + snap | Dummy 3 agents; Cluster/Active/Focus; 8 snap points | W0 | Placeholders in a pile. Click pile → line. Click one → Focus card (can be ugly). Drag to all 8 snaps; corners expand **vertical**. Gaps click through. |
+| **W1** | Mode + Layout + snap | Dummy 3 agents; Default/Focus; 4 snap points | W0 | Placeholders in a glass pill. Click marble → Focus card. Drag to all 4 midpoints. Outside the pill click through. |
 | **W2** | AgentStore + Ingest + helper | Fake + live events update status | W0 | Debug inject changes status. `curl` a fixture at `:17832/hook` **with `X-Marbles-Token` from ingest.json** updates a marble; the same POST without the token is `401` and does not change the pile. Optional: install hooks and run a real Claude **or** Cursor Agent turn and watch a marble appear. |
-| **W3** | Chips + motion + bloom + error hue | Works against dummy *or* live store | W1, W2 | Working swirls (even with placeholder spheres). Finished freezes + caustic sweep. Error goes **red** without cracks. Thinking vs tool chips readable at 36pt. |
-| **W4** | Metal + Identity | Reference look at 36pt | W1 | Six families vs [the still](references/marble-visual-reference.png). Same marble on a white Google Doc **and** a dark desktop. Debug cycle seeds. No black plate. |
-| **W5** | Focus popover + preview | Actions land in W6 | W1, W2 | Preview copy order (waiting / tool / text). Hover a marble to enter / switch Focus. Click hero to leave to Active. Click outside packs to Cluster. Card stays on-screen at every snap. |
+| **W3** | Lights + motion | Works against dummy *or* live store | W1, W2 | Thinking waves. Tool calls flash 1–2 whites. Waiting all white. Finished all green. Error all red. |
+| **W4** | Metal + Identity | Gem-smoke discs at 36pt | W1 | Distinct palettes, opaque discs, no per-marble glass. Same marble on a white Google Doc **and** a dark desktop. Debug cycle seeds. |
+| **W5** | Focus popover + preview | Actions land in W6 | W1, W2 | Preview copy order (waiting / tool / text). Hover a marble to enter Focus; hover off the pill+card returns to Default. Card stays on-screen at every snap. |
 | **W6** | Jump-in adapters | Claude Code / Cursor / Terminal / Conductor | W5 | Each visible **enabled** button opens the right **app** (Claude chat deep link when we have a session id). Cursor-sourced marbles show Open Cursor, not Claude Code. No reply field. |
 | **W7** | Hook installer + demo + prefs | Repair / undo both configs | W2 | First-run checklist. Demo marble if empty. Confirm `~/.claude/settings.json` **and** `~/.cursor/hooks.json` contain `marbles-hook`. Undo removes only ours. Reduced motion snaps. |
 | **W8** | Packaging | cask / install.sh / notarize | W7 | Clean machine / other account: install in <5 min, see a marble. |
@@ -803,9 +772,9 @@ Suggested pairing: **W0→W1** and **W0→W2** in parallel after the panel exist
 
 | Milestone | Streams | Done when |
 | --- | --- | --- |
-| **M0 Skeleton** | W0, W1 | Drag, snap, three dummy marbles, three modes |
+| **M0 Skeleton** | W0, W1 | Drag, snap, three dummy marbles, Default + Focus |
 | **M1 Live agents** | W2, W3, W7 **hook merge only** | Real Claude **or** Cursor sessions; working/freeze/error hue; chips; bloom |
-| **M2 Material** | W4 | Procedural glass at reference quality; 6 families |
+| **M2 Material** | W4 | Gem-smoke opaque discs; seeded 3–5 color palettes |
 | **M3 Jump-in** | W5, W6 | Preview + open actions (Claude Code / Cursor / Terminal / Conductor) |
 | **M4 Install** | W7 finish (demo, checklist, prefs), W8 | <5 min engineer path |
 
@@ -816,14 +785,16 @@ Suggested pairing: **W0→W1** and **W0→W2** in parallel after the panel exist
 | Decision | Choice | Why |
 | --- | --- | --- |
 | Stack | Native Swift / AppKit / SwiftUI / Metal | Overlay + glass; PRD rejects Electron |
-| Cluster click | Occupied circles → Active | Click-through gaps; do not skip to Focus |
-| Corner Active | Vertical line | PRD §7.2 |
+| Dock hover | Marble → Focus | Hover switches; click does not dismiss |
+| Midpoint dock | Vertical on left/right, horizontal on top/bottom; centered | PRD §7.2 |
+| Empty overlay | 10×36 glass pill | Still centered on the snap |
 | Error art | Red hue filter, no bloom | Keep identity; no fractures |
-| Subagents | Chips / satellites only | Protect 3×3×3 |
-| Lattice | Sticky index, packed isometric | Same marble stays put |
-| Overflow | 26 + `+N` in lattice slot `(2,0,0)`; evict oldest `lastEventAt` | 27 slots, one used by overflow |
-| Freeze time | Hold last `animationTime` | Resume from pose |
-| Waiting | `hold=1`, not `freeze` | Mid-swirl, not “done” |
+| Subagents | Chips / satellites only | One marble per parent session |
+| Order | Insertion order; pack on leave | No sticky holes in a 1D pill |
+| Overflow | Scroll after 9 visible; hard cap 50 | No `+N` marble |
+| Snap | 4 midpoints; default and migrate to **right** | No corners |
+| Freeze time | Never reset `animationTime`; reduced motion stops the clock | Resume from pose |
+| Time scale | 1.5 working/thinking, 0.25 waiting, 0.05 else | Status is speed |
 | Window | `.accessory` + `statusBar` + join-all | No Dock; no `.stationary` |
 | Ingest | Local HTTP :17832 + helper + `X-Marbles-Token` | Unauthenticated localhost POSTs must not mutate agents |
 | Reply | **Out of v1** — no Focus composer, no keystroke injection | Jump-in only |
@@ -868,8 +839,6 @@ Do not request TCC before a marble is on screen.
 | AgentStore | Single source of truth for `[Agent]` |
 | MarbleParams | Identity uniforms (seeded, stable) |
 | MarbleFrameUniforms | Status uniforms (motion, freeze, errorHue, bloom) |
-| Packed lattice | Isometric 3×3×3 without drawing empty cells |
-| Overflow marble | `+N` stand-in occupying one of 27 slots when count > 27 |
-| Sticky slot | `session_id` → `latticeIndex` that does not shift when neighbors leave |
-| hold vs freeze | Waiting holds the swirl (`hold`); finished/error is a photograph (`freeze`) |
+| Default dock | Pill-shaped `NSGlassEffectView` of 36pt marbles |
+| time scale | Status multiplies `dt` into `animationTime` |
 | Marbles-owned hook | settings.json entry whose command path contains `marbles-hook` |

@@ -4,162 +4,111 @@ import Foundation
 enum LayoutTests {
     static func run() {
         sizes()
-        noOverflowAtCapacity()
-        overflowAt28()
-        overflowSitsInReservedSlot()
-        stickySlotsDoNotRepack()
-        lingerCountsTowardCap()
-        activeShowsFullList()
+        paddingAndStride()
+        emptyDock()
+        nineVisibleThenScroll()
+        insertionOrderPacksOnLeave()
+        noOverflowToken()
         snapOrientations()
         releaseAlwaysLocks()
-        eightSnapOriginsAreDistinct()
+        fourSnapOriginsAreDistinct()
+        cornersMigrateToRight()
+        focusKeepsMarbleSize()
         focusCardStaysOnScreen()
         focusCardIsCompact()
+        dockStaysCenteredWhenCardOpens()
+        scrollSnapsToItems()
+        revealKeepsVisible()
+        demoIsLaidOut()
     }
 
     private static func sizes() {
         let roster = agents(count: 3)
-        let cluster = clusterLayout(roster)
-        TestRun.expectEqual(cluster.frames.count, 3, "cluster frames")
-        for frame in cluster.frames.values {
-            TestRun.expectNear(frame.size, LayoutEngine.clusterSize, "cluster marble")
-        }
-
-        let active = lineLayout(roster)
-        TestRun.expectEqual(active.overflow, nil, "active has no overflow token")
-        for frame in active.frames.values {
-            TestRun.expectNear(frame.size, LayoutEngine.activeSize, "active marble")
+        let dock = dockLayout(roster)
+        TestRun.expectEqual(dock.frames.count, 3, "dock frames")
+        for frame in dock.frames.values {
+            TestRun.expectNear(frame.size, LayoutEngine.marbleSize, "dock marble")
+            TestRun.expectNear(frame.dim, 0, "no dim")
         }
 
         let heroID = roster[0].id
-        let focus = lineLayout(roster, mode: .focus(heroID))
-        TestRun.expectNear(focus.frames[heroID]?.size ?? 0, LayoutEngine.focusHeroSize, "focus hero")
-        for (id, frame) in focus.frames where id != heroID {
-            TestRun.expectNear(frame.size, LayoutEngine.activeSize, "dimmed focus marble")
+        let focus = dockLayout(roster, mode: .focus(heroID))
+        TestRun.expectNear(focus.frames[heroID]?.size ?? 0, LayoutEngine.marbleSize, "focus marble stays 36")
+        for frame in focus.frames.values {
+            TestRun.expectNear(frame.size, LayoutEngine.marbleSize, "all marbles 36 in focus")
+            TestRun.expectNear(frame.dim, 0, "no dim in focus")
         }
     }
 
-    private static func noOverflowAtCapacity() {
-        let result = clusterLayout(agents(count: 27))
-        TestRun.expectEqual(result.frames.count, 27, "full lattice")
-        TestRun.expect(result.overflow == nil, "27 agents should not overflow")
-        TestRun.expect(result.overflowFrame == nil, "no overflow frame at 27")
-    }
-
-    private static func overflowAt28() {
-        let roster = agents(count: 28)
-        let result = clusterLayout(roster)
-        TestRun.expectEqual(result.frames.count, 26, "overflow shows 26 identities")
-        TestRun.expectEqual(result.overflow?.hiddenCount, 2, "28 − 26 hidden")
-        TestRun.expect(result.overflowFrame != nil, "overflow frame present")
-        let occupyingOverflow = roster.contains { agent in
-            agent.latticeIndex == LayoutEngine.overflowLatticeIndex && result.frames[agent.id] != nil
-        }
-        TestRun.expect(!occupyingOverflow, "reserved overflow slot stays free of an identity")
-    }
-
-    private static func overflowSitsInReservedSlot() {
-        let roster = agents(count: 28)
-        let result = clusterLayout(roster)
-        guard let overflow = result.overflowFrame else {
-            TestRun.expect(false, "expected overflow frame")
+    private static func paddingAndStride() {
+        TestRun.expectNear(LayoutEngine.itemStride, 55, "36 + 4 + 3 + 12")
+        let roster = agents(count: 2)
+        let layout = dockLayout(roster)
+        guard let a = layout.frames[roster[0].id], let b = layout.frames[roster[1].id] else {
+            TestRun.expect(false, "expected two frames")
             return
         }
-        guard let neighbor = roster.first(where: { result.frames[$0.id] != nil && $0.latticeIndex != nil }),
-              let neighborIndex = neighbor.latticeIndex,
-              let neighborFrame = result.frames[neighbor.id]
-        else {
-            TestRun.expect(false, "expected a visible neighbor")
+        TestRun.expectNear(abs(a.center.y - b.center.y), LayoutEngine.itemStride, "item stride")
+        TestRun.expectEqual(layout.orientation.axis, .vertical, "default test dock is vertical")
+        TestRun.expectNear(layout.dockFrame.width, LayoutEngine.occupiedThickness, "10 + 36 + 10")
+        let marbleLeft = min(a.center.x, b.center.x) - LayoutEngine.marbleSize / 2
+        TestRun.expectNear(marbleLeft - layout.dockFrame.minX, LayoutEngine.padding, "10pt side padding")
+    }
+
+    private static func emptyDock() {
+        let layout = dockLayout([])
+        TestRun.expectEqual(layout.frames.count, 0, "no marbles")
+        TestRun.expectNear(layout.dockFrame.width, LayoutEngine.emptyThickness, "empty thickness")
+        TestRun.expectNear(layout.dockFrame.height, LayoutEngine.emptyLength, "empty length")
+    }
+
+    private static func nineVisibleThenScroll() {
+        let nine = dockLayout(agents(count: 9))
+        TestRun.expectEqual(nine.visibleCount, 9, "nine fit")
+        TestRun.expectNear(nine.maxScroll, 0, "no scroll at 9")
+        TestRun.expectNear(nine.dockFrame.height, LayoutEngine.contentLength(count: 9), "dock grows to 9")
+
+        let ten = dockLayout(agents(count: 10))
+        TestRun.expectEqual(ten.visibleCount, 9, "cap visible at 9")
+        TestRun.expectNear(ten.maxScroll, LayoutEngine.itemStride, "tenth requires one stride of scroll")
+        TestRun.expectNear(ten.dockFrame.height, LayoutEngine.contentLength(count: 9), "viewport stays 9 tall")
+
+        let scrolled = dockLayout(agents(count: 10), scrollOffset: LayoutEngine.itemStride)
+        TestRun.expectNear(scrolled.scrollOffset, LayoutEngine.itemStride, "can scroll to last")
+    }
+
+    private static func insertionOrderPacksOnLeave() {
+        var roster = agents(count: 4)
+        let first = roster[0].id
+        let sliding = roster[2].id
+        roster.remove(at: 1)
+        let packed = dockLayout(roster)
+        TestRun.expectEqual(packed.frames.count, 3, "hole closed")
+        guard let a = packed.frames[first], let b = packed.frames[sliding] else {
+            TestRun.expect(false, "expected packed frames")
             return
         }
-        let expected = LayoutEngine.latticeCenter(index: LayoutEngine.overflowLatticeIndex)
-        let neighborCenter = LayoutEngine.latticeCenter(index: neighborIndex)
-        TestRun.expectNear(
-            overflow.center.x - neighborFrame.center.x,
-            expected.x - neighborCenter.x,
-            "overflow x in lattice"
-        )
-        TestRun.expectNear(
-            overflow.center.y - neighborFrame.center.y,
-            expected.y - neighborCenter.y,
-            "overflow y in lattice"
-        )
-        TestRun.expectNear(overflow.size, LayoutEngine.clusterSize, "overflow size")
-        TestRun.expectEqual(
-            LayoutEngine.latticeCoordinate(index: LayoutEngine.overflowLatticeIndex).x, 2
-        )
-        TestRun.expectEqual(
-            LayoutEngine.latticeCoordinate(index: LayoutEngine.overflowLatticeIndex).y, 0
-        )
-        TestRun.expectEqual(
-            LayoutEngine.latticeCoordinate(index: LayoutEngine.overflowLatticeIndex).z, 0
-        )
+        TestRun.expectNear(abs(a.center.y - b.center.y), LayoutEngine.itemStride, "neighbors close the gap")
     }
 
-    private static func stickySlotsDoNotRepack() {
-        var roster = agents(count: 5)
-        let original = Dictionary(uniqueKeysWithValues: roster.map { ($0.id, $0.latticeIndex) })
-        roster.removeAll { $0.latticeIndex == 1 }
-        let incoming = Agent.debugDummy(index: 99)
-        roster.append(incoming)
-        LatticeSlots.assign(&roster)
-        for agent in roster where agent.id != incoming.id {
-            TestRun.expectEqual(agent.latticeIndex, original[agent.id], "slot stayed for \(agent.id)")
-        }
-        TestRun.expectEqual(roster.last?.latticeIndex, 1, "new agent reuses vacated slot")
-
-        let sparse: [Agent] = [0, 8, 20].map { index in
-            var agent = Agent.debugDummy(index: index)
-            agent.latticeIndex = index
-            return agent
-        }
-        let result = clusterLayout(sparse)
-        TestRun.expectEqual(result.frames.count, 3)
-        let centers = sparse.compactMap { agent -> CGPoint? in
-            result.frames[agent.id].map(\.center)
-        }
-        TestRun.expectEqual(Set(centers.map { "\($0.x),\($0.y)" }).count, 3, "sparse slots stay unpacked")
-        if let a = result.frames[sparse[0].id], let b = result.frames[sparse[1].id] {
-            let expected = LayoutEngine.latticeCenter(index: 8)
-            let origin = LayoutEngine.latticeCenter(index: 0)
-            TestRun.expectNear(b.center.x - a.center.x, expected.x - origin.x, "sticky x")
-            TestRun.expectNear(b.center.y - a.center.y, expected.y - origin.y, "sticky y")
-        }
-    }
-
-    private static func lingerCountsTowardCap() {
-        var roster = agents(count: 26)
-        for i in 0..<2 {
-            var lingered = Agent.debugDummy(index: 80 + i)
-            lingered.sessionEndedAt = Date()
-            roster.append(lingered)
-        }
-        LatticeSlots.assign(&roster)
-        let result = clusterLayout(roster)
-        TestRun.expectEqual(result.frames.count, 26, "linger still occupies cluster capacity")
-        TestRun.expectEqual(result.overflow?.hiddenCount, 2, "linger counts toward overflow")
-    }
-
-    private static func activeShowsFullList() {
-        let roster = agents(count: 28)
-        let result = lineLayout(roster)
-        TestRun.expectEqual(result.frames.count, 28, "Active shows every agent, including overflowed")
-        TestRun.expect(result.overflow == nil, "Active does not draw a +N token")
+    private static func noOverflowToken() {
+        let layout = dockLayout(agents(count: 28))
+        TestRun.expectEqual(layout.frames.count, 28, "all agents laid out")
+        TestRun.expectEqual(layout.visibleCount, 9, "still 9 visible")
     }
 
     private static func snapOrientations() {
-        for point in [SnapPoint.topLeft, .topRight, .bottomLeft, .bottomRight, .left, .right] {
-            let orientation = SnapGeometry.orientation(for: point)
-            TestRun.expectEqual(orientation.axis, .vertical, "\(point) should be vertical")
-        }
-        TestRun.expectEqual(SnapGeometry.orientation(for: .top).axis, .horizontal, "top midpoint")
-        TestRun.expectEqual(SnapGeometry.orientation(for: .bottom).axis, .horizontal, "bottom midpoint")
-        TestRun.expectEqual(SnapPoint.allCases.count, 8, "eight snap points")
+        TestRun.expectEqual(SnapGeometry.orientation(for: .left).axis, .vertical, "left vertical")
+        TestRun.expectEqual(SnapGeometry.orientation(for: .right).axis, .vertical, "right vertical")
+        TestRun.expectEqual(SnapGeometry.orientation(for: .top).axis, .horizontal, "top horizontal")
+        TestRun.expectEqual(SnapGeometry.orientation(for: .bottom).axis, .horizontal, "bottom horizontal")
+        TestRun.expectEqual(SnapPoint.allCases.count, 4, "four snap points")
+        TestRun.expectEqual(SnapPoint.default, .right, "default is right")
     }
 
     private static func releaseAlwaysLocks() {
         let safe = NSRect(x: 12, y: 12, width: 1416, height: 876)
-        let size = CGSize(width: 52, height: 52)
+        let size = CGSize(width: 56, height: 176)
         for point in SnapPoint.allCases {
             let origin = SnapGeometry.origin(for: point, size: size, safe: safe)
             let resolved = SnapGeometry.resolveRelease(
@@ -180,12 +129,31 @@ enum LayoutTests {
         }
     }
 
-    private static func eightSnapOriginsAreDistinct() {
+    private static func fourSnapOriginsAreDistinct() {
         let safe = NSRect(x: 12, y: 12, width: 1416, height: 876)
-        let size = CGSize(width: 52, height: 52)
+        let size = CGSize(width: 56, height: 176)
         let origins = SnapPoint.allCases.map { SnapGeometry.origin(for: $0, size: size, safe: safe) }
         let unique = Set(origins.map { "\($0.x),\($0.y)" })
-        TestRun.expectEqual(unique.count, 8, "each snap point has its own origin")
+        TestRun.expectEqual(unique.count, 4, "each snap point has its own origin")
+    }
+
+    private static func cornersMigrateToRight() {
+        let data = try? JSONDecoder().decode(SnapPoint.self, from: Data("\"topLeft\"".utf8))
+        TestRun.expectEqual(data, .right, "legacy corners migrate to right")
+        let bottomRight = try? JSONDecoder().decode(SnapPoint.self, from: Data("\"bottomRight\"".utf8))
+        TestRun.expectEqual(bottomRight, .right, "bottomRight migrates")
+        let top = try? JSONDecoder().decode(SnapPoint.self, from: Data("\"top\"".utf8))
+        TestRun.expectEqual(top, .top, "midpoints keep identity")
+    }
+
+    private static func focusKeepsMarbleSize() {
+        let roster = agents(count: 3)
+        let dock = dockLayout(roster)
+        let focus = dockLayout(roster, mode: .focus(roster[1].id))
+        TestRun.expectNear(dock.dockFrame.width, focus.dockFrame.width, "dock width unchanged")
+        TestRun.expectNear(dock.dockFrame.height, focus.dockFrame.height, "dock height unchanged")
+        TestRun.expect(focus.focusCardFrame != nil, "focus has a card")
+        TestRun.expect(dock.focusCardFrame == nil, "dock has no card")
     }
 
     private static func focusCardStaysOnScreen() {
@@ -193,40 +161,72 @@ enum LayoutTests {
         let hero = roster[0].id
         let safe = NSRect(x: 12, y: 12, width: 1416, height: 876)
         for point in SnapPoint.allCases {
-            let toward: Bool
-            switch point {
-            case .left, .topLeft, .bottomLeft, .bottom: toward = true
-            case .right, .topRight, .bottomRight, .top: toward = false
-            }
             let layout = LayoutEngine.layout(
                 agents: roster,
                 mode: .focus(hero),
                 orientation: SnapGeometry.orientation(for: point),
                 scrollOffset: 0,
                 availableLineLength: point == .top || point == .bottom ? safe.width : safe.height,
-                cardTowardPositivePerpendicular: toward
+                cardTowardPositivePerpendicular: SnapGeometry.cardTowardPositive(for: point)
             )
             guard let card = layout.focusCardFrame else {
                 TestRun.expect(false, "focus card missing at \(point)")
                 continue
             }
-            TestRun.expect(card.minX >= -0.5 && card.minY >= -0.5, "card origin in panel at \(point)")
-            TestRun.expect(card.maxX <= layout.panelSize.width + 0.5, "card right in panel at \(point)")
-            TestRun.expect(card.maxY <= layout.panelSize.height + 0.5, "card top in panel at \(point)")
-            let origin = SnapGeometry.origin(for: point, size: layout.panelSize, safe: safe)
-            let screen = card.offsetBy(dx: origin.x, dy: origin.y)
-            TestRun.expect(screen.minX >= safe.minX - 0.5, "\(point) left stays on-screen")
-            TestRun.expect(screen.minY >= safe.minY - 0.5, "\(point) bottom stays on-screen")
-            TestRun.expect(screen.maxX <= safe.maxX + 0.5, "\(point) right stays on-screen")
-            TestRun.expect(screen.maxY <= safe.maxY + 0.5, "\(point) top stays on-screen")
+            let origin = SnapGeometry.panelOrigin(
+                snap: .snap(point),
+                dockFrame: layout.dockFrame,
+                panelSize: layout.panelSize,
+                safe: safe
+            )
+            let dockScreen = layout.dockFrame.offsetBy(dx: origin.x, dy: origin.y)
+            let cardScreen = card.offsetBy(dx: origin.x, dy: origin.y)
+            let expectedDock = SnapGeometry.origin(for: point, size: layout.dockFrame.size, safe: safe)
+            TestRun.expectNear(dockScreen.minX, expectedDock.x, "\(point) dock stays at snap")
+            TestRun.expectNear(dockScreen.minY, expectedDock.y, "\(point) dock y at snap")
+            TestRun.expect(cardScreen.minX >= safe.minX - 0.5, "\(point) card left")
+            TestRun.expect(cardScreen.maxX <= safe.maxX + 0.5, "\(point) card right")
         }
     }
 
     private static func focusCardIsCompact() {
         TestRun.expect(LayoutEngine.focusCardSize.width <= 360, "card ≤360pt")
         let roster = agents(count: 3)
-        let focus = lineLayout(roster, mode: .focus(roster[0].id))
+        let focus = dockLayout(roster, mode: .focus(roster[0].id))
         TestRun.expect(focus.focusCardFrame != nil, "focus has a card")
-        TestRun.expect(lineLayout(roster).focusCardFrame == nil, "active has no card")
+        TestRun.expect(dockLayout(roster).focusCardFrame == nil, "dock has no card")
+    }
+
+    private static func dockStaysCenteredWhenCardOpens() {
+        let roster = agents(count: 3)
+        let dock = dockLayout(roster)
+        let focus = dockLayout(roster, mode: .focus(roster[0].id))
+        TestRun.expectNear(dock.dockFrame.width, focus.dockFrame.width, "pill width")
+        TestRun.expectNear(dock.dockFrame.height, focus.dockFrame.height, "pill height")
+    }
+
+    private static func scrollSnapsToItems() {
+        let snapped = LayoutEngine.snapScroll(LayoutEngine.itemStride * 0.6, maxScroll: LayoutEngine.itemStride * 4)
+        TestRun.expectNear(snapped, LayoutEngine.itemStride, "round to nearest item")
+        let clamped = LayoutEngine.snapScroll(10_000, maxScroll: LayoutEngine.itemStride)
+        TestRun.expectNear(clamped, LayoutEngine.itemStride, "clamp then snap")
+    }
+
+    private static func revealKeepsVisible() {
+        let current = LayoutEngine.scrollToReveal(index: 2, count: 12, available: 900, current: 0)
+        TestRun.expectNear(current, 0, "already visible stays")
+        let later = LayoutEngine.scrollToReveal(index: 11, count: 12, available: 900, current: 0)
+        TestRun.expect(later > 0, "scroll to last item")
+        TestRun.expectNear(
+            later,
+            LayoutEngine.scrollToReveal(index: 11, count: 12, available: 900, current: later),
+            "idempotent once visible"
+        )
+    }
+
+    private static func demoIsLaidOut() {
+        let demo = DemoMarble.make()
+        let layout = dockLayout([demo])
+        TestRun.expectEqual(layout.frames.count, 1, "demo marble is visible")
     }
 }

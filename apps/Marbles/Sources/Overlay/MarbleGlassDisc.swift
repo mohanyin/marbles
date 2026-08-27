@@ -1,24 +1,28 @@
 import AppKit
 
-/// Circular system glass seated under a marble. Sized smaller than the sphere
-/// so the material rim stays inside the painted disc instead of halo-ing it.
-final class MarbleGlassDisc: NSView {
+/// Adaptive stadium glass for the default dock. No extra stroke; macOS glass draws the rim.
+final class DockGlassView: NSView {
     private let glass: NSView
-    private let maskLayer = CAShapeLayer()
 
     override init(frame frameRect: NSRect) {
         if #available(macOS 26.0, *) {
             let view = NSGlassEffectView(frame: frameRect)
-            view.style = .clear
+            view.style = .regular
             view.cornerRadius = min(frameRect.width, frameRect.height) / 2
             glass = view
         } else {
-            glass = NSView(frame: frameRect)
+            let view = NSVisualEffectView(frame: frameRect)
+            view.material = .hudWindow
+            view.blendingMode = .behindWindow
+            view.state = .active
+            view.wantsLayer = true
+            view.layer?.cornerRadius = min(frameRect.width, frameRect.height) / 2
+            view.layer?.masksToBounds = true
+            glass = view
         }
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.mask = maskLayer
         glass.autoresizingMask = [.width, .height]
         addSubview(glass)
     }
@@ -32,10 +36,11 @@ final class MarbleGlassDisc: NSView {
     override func layout() {
         super.layout()
         glass.frame = bounds
+        let radius = min(bounds.width, bounds.height) / 2
         if #available(macOS 26.0, *) {
-            (glass as? NSGlassEffectView)?.cornerRadius = min(bounds.width, bounds.height) / 2
+            (glass as? NSGlassEffectView)?.cornerRadius = radius
+        } else {
+            glass.layer?.cornerRadius = radius
         }
-        maskLayer.frame = bounds
-        maskLayer.path = CGPath(ellipseIn: bounds, transform: nil)
     }
 }
