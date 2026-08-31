@@ -28,6 +28,8 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Chips/Chips.swift" \
   "$SRC/Focus/FocusPreview.swift" \
   "$SRC/Focus/FocusCardMetrics.swift" \
+  "$SRC/Focus/TranscriptTurn.swift" \
+  "$SRC/Focus/TranscriptReader.swift" \
   "$SRC/Hooks/JSONC.swift" \
   "$SRC/Hooks/Hooks.swift" \
   "$SRC/Persistence/PrefsStore.swift" \
@@ -45,6 +47,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$TESTS/IdentityTests.swift" \
   "$TESTS/FocusPreviewTests.swift" \
   "$TESTS/FocusCardMetricsTests.swift" \
+  "$TESTS/TranscriptTests.swift" \
   "$TESTS/HooksMergeTests.swift" \
   "$TESTS/DemoTests.swift" \
   "$TESTS/main.swift"

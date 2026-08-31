@@ -90,7 +90,10 @@ enum HookMapper {
         default:
             extracted = nil
         }
-        return extracted.map { String($0.prefix(80)) }
+        // Commands are often multi-line (heredocs); collapse so a row stays one line.
+        return extracted
+            .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            .map { String($0.prefix(80)) }
     }
 
     private static func string(_ obj: [String: Any], _ keys: String...) -> String? {
