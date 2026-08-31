@@ -7,7 +7,7 @@ import AppKit
 /// outside the card body, so only `body` clips. Sizing lives in `FocusCardMetrics` and is
 /// shared with `LayoutEngine`.
 /// Top-down coordinates, matching `FocusCardView.isFlipped`.
-final class FlippedView: NSView {
+class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
@@ -20,8 +20,12 @@ final class FocusCardView: NSView {
     private let promptBox = FlippedView()
     private let promptScroll = NSScrollView()
     private let prompt = NSTextView()
-    private let responseScroll = NSScrollView()
-    private let response = NSTextView()
+    private let transcriptScroll = NSScrollView()
+    private let transcript = TranscriptView()
+    /// Newest-entry follow, released when the reader scrolls up (PRD §5).
+    private var followsNewest = true
+    private var lastTurn = TranscriptTurn.empty
+    private var lastFallback = ""
 
     /// `apply` runs before `layout`, and `pin(text:to:)` re-flows the text container afterwards,
     /// which can leave a scroll region parked mid-content. Reset once the frames are final.
@@ -60,8 +64,25 @@ final class FocusCardView: NSView {
         configure(scroll: promptScroll, text: prompt, color: CardPalette.promptText)
         promptBox.addSubview(promptScroll)
 
-        configure(scroll: responseScroll, text: response, color: CardPalette.responseText)
-        body.addSubview(responseScroll)
+        transcriptScroll.hasVerticalScroller = false
+        transcriptScroll.hasHorizontalScroller = false
+        transcriptScroll.autohidesScrollers = true
+        transcriptScroll.drawsBackground = false
+        transcriptScroll.borderType = .noBorder
+        transcriptScroll.scrollerStyle = .overlay
+        let scroller = SlimScroller(frame: .zero)
+        scroller.scrollerStyle = .overlay
+        transcriptScroll.verticalScroller = scroller
+        transcriptScroll.documentView = transcript
+        body.addSubview(transcriptScroll)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(transcriptDidScroll),
+            name: NSView.boundsDidChangeNotification,
+            object: transcriptScroll.contentView
+        )
+        transcriptScroll.contentView.postsBoundsChangedNotifications = true
 
         // Added last so the overhanging half is never covered by the body.
         addSubview(marble)
@@ -89,12 +110,13 @@ final class FocusCardView: NSView {
         }
         promptBox.isHidden = promptText.isEmpty
 
-        let responseText = FocusPreview.line(for: agent)
-        if response.string != responseText {
-            response.string = responseText
-            needsScrollReset = true
+        let fallback = FocusPreview.line(for: agent)
+        if agent.turn != lastTurn || fallback != lastFallback {
+            lastTurn = agent.turn
+            lastFallback = fallback
+            transcript.apply(turn: agent.turn, fallback: fallback)
         }
-        responseScroll.isHidden = responseText.isEmpty
+        transcriptScroll.isHidden = agent.turn.runs.isEmpty && fallback.isEmpty
 
         needsLayout = true
     }
@@ -155,18 +177,22 @@ final class FocusCardView: NSView {
             y += height
         }
 
-        if !responseScroll.isHidden {
-            let height = metrics.responseHeight(response.string)
+        if !transcriptScroll.isHidden {
+            let height = metrics.transcriptHeight(lastTurn, fallback: lastFallback)
             y += metrics.gap
-            responseScroll.frame = NSRect(x: pad, y: y, width: width, height: height)
-            setScroller(responseScroll, enabled: metrics.responseOverflows(response.string))
-            pin(text: response, to: responseScroll, sideInset: 0)
+            transcriptScroll.frame = NSRect(x: pad, y: y, width: width, height: height)
+            setScroller(
+                transcriptScroll,
+                enabled: metrics.transcriptOverflows(lastTurn, fallback: lastFallback)
+            )
+            if followsNewest { scrollToBottom(transcriptScroll) }
         }
 
         if needsScrollReset {
             needsScrollReset = false
             scrollToTop(promptScroll)
-            scrollToTop(responseScroll)
+            followsNewest = true
+            scrollToBottom(transcriptScroll)
         }
     }
 
@@ -174,6 +200,28 @@ final class FocusCardView: NSView {
     private func setScroller(_ scroll: NSScrollView, enabled: Bool) {
         guard scroll.hasVerticalScroller != enabled else { return }
         scroll.hasVerticalScroller = enabled
+    }
+
+    /// Follow releases the moment the reader scrolls away from the bottom, and re-engages when
+    /// they come back — otherwise new steps would yank the viewport out from under them.
+    @objc private func transcriptDidScroll() {
+        guard !transcriptScroll.isHidden else { return }
+        let visible = transcriptScroll.contentView.bounds
+        let content = transcript.contentHeight
+        let atBottom = visible.maxY >= content - 2
+        followsNewest = atBottom
+    }
+
+    private func scrollToBottom(_ scroll: NSScrollView) {
+        let content = transcript.contentHeight
+        let visible = scroll.contentSize.height
+        guard content > visible else {
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+            return
+        }
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: content - visible))
+        scroll.reflectScrolledClipView(scroll.contentView)
     }
 
     private func scrollToTop(_ scroll: NSScrollView) {
@@ -199,8 +247,9 @@ final class FocusCardView: NSView {
             rule.layer?.backgroundColor = CardPalette.hairline.cgColor
             promptBox.layer?.backgroundColor = CardPalette.promptFill.cgColor
             prompt.textColor = CardPalette.promptText
-            response.textColor = CardPalette.responseText
         }
+        // Row colours are baked in at build time, so rebuild them on an appearance change.
+        transcript.apply(turn: lastTurn, fallback: lastFallback)
     }
 
     private func configure(scroll: NSScrollView, text: NSTextView, color: NSColor) {

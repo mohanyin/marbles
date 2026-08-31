@@ -236,7 +236,8 @@ final class OverlayController {
         return FocusCardMetrics.size(
             title: FocusPreview.title(for: agent),
             prompt: FocusPreview.prompt(for: agent),
-            response: FocusPreview.line(for: agent)
+            turn: agent.turn,
+            fallback: FocusPreview.line(for: agent)
         )
     }
 

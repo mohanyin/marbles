@@ -55,43 +55,6 @@ enum TranscriptPeek {
         tailData(path: path).flatMap(latestUserText(data:))
     }
 
-    /// The current turn: the human's latest message and only the reply that *follows* it.
-    ///
-    /// A reply is deliberately dropped when a newer human turn appears after it — otherwise the
-    /// card shows the previous answer beside the new question and reads as a response to it.
-    /// Tool results and other non-human `type == "user"` rows don't open a new turn.
-    static func latestExchange(path: String?) -> (prompt: String?, reply: String?) {
-        guard let data = tailData(path: path) else { return (nil, nil) }
-        return latestExchange(data: data)
-    }
-
-    static func latestExchange(data: Data) -> (prompt: String?, reply: String?) {
-        var prompt: String?
-        var reply: String?
-        guard let text = String(data: data, encoding: .utf8) else { return (nil, nil) }
-        text.enumerateLines { line, _ in
-            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
-                return
-            }
-            if obj["isSidechain"] as? Bool == true { return }
-            let type = obj["type"] as? String
-            let role = (obj["message"] as? [String: Any])?["role"] as? String
-
-            if type == "user" || role == "user" {
-                // Only a real human message opens a turn; tool results yield nil here.
-                if let value = userText(obj) {
-                    prompt = cap(value)
-                    reply = nil
-                }
-                return
-            }
-            if type == "assistant" || role == "assistant", let value = assistantText(obj) {
-                reply = value
-            }
-        }
-        return (prompt, reply)
-    }
-
     static func latestUserText(data: Data) -> String? {
         var latest: String?
         guard let text = String(data: data, encoding: .utf8) else { return nil }

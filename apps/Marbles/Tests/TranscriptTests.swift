@@ -4,6 +4,7 @@ enum TranscriptTests {
     static func run() {
         parsesAssistantProse()
         parsesToolCallsAndResolvesStatus()
+        bashTargetSkipsDirectoryHops()
         failedToolResultMarksFailure()
         newHumanTurnResetsTheStream()
         toolResultsDoNotOpenATurn()
@@ -68,6 +69,32 @@ enum TranscriptTests {
         TestRun.expectEqual(call.target, "./scripts/test.sh", "target from command")
         TestRun.expect(call.status == .succeeded, "resolved to succeeded")
         TestRun.expectEqual(call.label, "Bash ./scripts/test.sh", "row label")
+    }
+
+    /// Agent commands nearly always start with a `cd`, which would otherwise fill the row.
+    private static func bashTargetSkipsDirectoryHops() {
+        let turn = parse([
+            human("q"),
+            toolUse("t1", "Bash", #"{"command":"./scripts/test.sh"}"#),
+        ])
+        guard case .tool(let call) = turn.entries.first else {
+            TestRun.expect(false, "tool entry present")
+            return
+        }
+        TestRun.expectEqual(call.target, "./scripts/test.sh", "leading cd hop dropped")
+
+        let multi = parse([
+            human("q"),
+            toolUse("t2", "Bash", #"{"command":"cd /a && cd /b && git status --short"}"#),
+        ])
+        if case .tool(let call) = multi.entries.first {
+            TestRun.expectEqual(call.target, "git status --short", "repeated hops dropped")
+        }
+
+        let plain = parse([human("q"), toolUse("t3", "Bash", #"{"command":"ls -la"}"#)])
+        if case .tool(let call) = plain.entries.first {
+            TestRun.expectEqual(call.target, "ls -la", "commands without a hop are untouched")
+        }
     }
 
     private static func failedToolResultMarksFailure() {

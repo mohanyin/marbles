@@ -53,6 +53,14 @@ struct TranscriptTurn: Equatable {
 
     var isEmpty: Bool { prompt == nil && entries.isEmpty }
 
+    /// Newest assistant prose in the turn — the one-line preview the card falls back to.
+    var latestProse: String? {
+        for entry in entries.reversed() {
+            if case .prose(let text) = entry { return text }
+        }
+        return nil
+    }
+
     var runs: [TranscriptRun] {
         var out: [TranscriptRun] = []
         for entry in entries {

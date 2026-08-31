@@ -86,7 +86,7 @@ enum HookMapper {
                 extracted = nil
             }
         case "Bash", "Shell":
-            extracted = dict.flatMap { string($0, "command") }.map { String($0.prefix(40)) }
+            extracted = dict.flatMap { string($0, "command") }.map { interestingCommand($0) }
         default:
             extracted = nil
         }
@@ -94,6 +94,18 @@ enum HookMapper {
         return extracted
             .map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
             .map { String($0.prefix(80)) }
+    }
+
+    /// Drop leading `cd <path> &&` hops so the row shows the command that matters. Nearly every
+    /// agent command starts by changing directory, which otherwise eats the whole row.
+    private static func interestingCommand(_ command: String) -> String {
+        var rest = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        while rest.hasPrefix("cd ") {
+            guard let separator = rest.range(of: "&&") else { break }
+            rest = String(rest[separator.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(rest.prefix(40))
     }
 
     private static func string(_ obj: [String: Any], _ keys: String...) -> String? {

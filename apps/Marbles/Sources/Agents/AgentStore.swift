@@ -10,6 +10,8 @@ final class AgentStore {
     private var bloomQueue: [AgentID] = []
     private var pendingStarts: [AgentID: HookEvent] = [:]
     private var previewRetry: [AgentID: Int] = [:]
+    /// One reader per session: cold load once, then incremental appends (PRD §7).
+    private var readers: [AgentID: TranscriptReader] = [:]
 
     init(seeds: SeedStore = SeedStore()) {
         self.seeds = seeds
@@ -140,6 +142,7 @@ final class AgentStore {
 
     func clearInjected() {
         agents.removeAll { $0.isInjected }
+        pruneReaders()
         notify()
     }
 
@@ -347,18 +350,28 @@ final class AgentStore {
         if let title = snapshot.title {
             agents[index].title = title
         }
-        let exchange = TranscriptPeek.latestExchange(path: path)
-        if let reply = exchange.reply {
+        if let path {
+            if var reader = readers[id] {
+                _ = reader.refresh(path: path)
+                readers[id] = reader
+            } else {
+                readers[id] = TranscriptReader.load(path: path)
+            }
+        }
+        let turn = readers[id]?.turn ?? .empty
+        agents[index].turn = turn
+
+        if let reply = turn.latestProse {
             agents[index].lastAssistantPreview = reply
         } else if let fallback, !fallback.isEmpty, agents[index].source == .cursor {
             agents[index].lastAssistantPreview = String(fallback.prefix(IngestConstants.previewLimit))
-        } else if exchange.prompt != nil {
+        } else if turn.prompt != nil {
             // We read the transcript and the newest human turn has no reply yet — drop the
             // previous turn's answer rather than showing it under the new question. Guarded on
             // `prompt` so an unreadable transcript leaves a good preview alone.
             agents[index].lastAssistantPreview = nil
         }
-        if let prompt = exchange.prompt {
+        if let prompt = turn.prompt {
             agents[index].lastUserPrompt = prompt
         }
     }
@@ -389,7 +402,16 @@ final class AgentStore {
             guard let ended = agent.sessionEndedAt else { return false }
             return ended < cutoff
         }
-        if agents.count != before { notify() }
+        if agents.count != before {
+            pruneReaders()
+            notify()
+        }
+    }
+
+    /// Readers hold a parsed turn and a file offset each; drop them with their agent.
+    private func pruneReaders() {
+        let live = Set(agents.map(\.id))
+        readers = readers.filter { live.contains($0.key) }
     }
 
     private func notify() {

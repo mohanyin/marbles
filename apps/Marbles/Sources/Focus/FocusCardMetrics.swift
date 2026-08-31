@@ -30,7 +30,14 @@ enum FocusCardMetrics {
     static let scrollGutter: CGFloat = 8
 
     static let maxPromptHeight: CGFloat = 72
-    static let maxResponseHeight: CGFloat = 200
+    /// Transcript viewport ceiling; it grows to this then scrolls (PRD §5).
+    static let maxTranscriptHeight: CGFloat = 320
+
+    /// Gap between transcript runs, and between tool rows inside one expanded run (PRD §10.5).
+    static let runSpacing: CGFloat = 10
+    static let toolRowSpacing: CGFloat = 6
+    static let toolRowHeight: CGFloat = 18
+    static let thinkingRowHeight: CGFloat = 18
 
     static let titleFont = NSFont.systemFont(ofSize: 15, weight: .medium)
     static let bodyFont = NSFont.systemFont(ofSize: 14, weight: .regular)
@@ -59,38 +66,77 @@ enum FocusCardMetrics {
 
     static func responseOverflows(_ response: String) -> Bool {
         guard !response.isEmpty else { return false }
-        return textHeight(response, font: bodyFont, width: responseTextWidth) > maxResponseHeight
+        return textHeight(response, font: bodyFont, width: responseTextWidth) > maxTranscriptHeight
+    }
+
+    // MARK: - Transcript
+
+    /// A run is expanded when it is the newest and still working; everything else collapses to
+    /// a single "Ran N commands" row (PRD §5.1).
+    static func runIsExpanded(_ run: TranscriptRun, isLast: Bool) -> Bool {
+        guard case .tools(let calls) = run else { return false }
+        return isLast && calls.contains { $0.status == .running }
+    }
+
+    static func runHeight(_ run: TranscriptRun, isLast: Bool) -> CGFloat {
+        switch run {
+        case .prose(let text):
+            return textHeight(text, font: bodyFont, width: responseTextWidth)
+        case .thinking:
+            return thinkingRowHeight
+        case .tools(let calls):
+            guard runIsExpanded(run, isLast: isLast) else { return toolRowHeight }
+            let n = CGFloat(calls.count)
+            return n * toolRowHeight + max(n - 1, 0) * toolRowSpacing
+        }
+    }
+
+    /// Height the transcript wants before clamping.
+    static func transcriptContentHeight(_ turn: TranscriptTurn, fallback: String) -> CGFloat {
+        let runs = turn.runs
+        guard !runs.isEmpty else {
+            return textHeight(fallback, font: bodyFont, width: responseTextWidth)
+        }
+        var height: CGFloat = 0
+        for (index, run) in runs.enumerated() {
+            if index > 0 { height += runSpacing }
+            height += runHeight(run, isLast: index == runs.count - 1)
+        }
+        return height
+    }
+
+    static func transcriptHeight(_ turn: TranscriptTurn, fallback: String) -> CGFloat {
+        min(transcriptContentHeight(turn, fallback: fallback), maxTranscriptHeight)
+    }
+
+    static func transcriptOverflows(_ turn: TranscriptTurn, fallback: String) -> Bool {
+        transcriptContentHeight(turn, fallback: fallback) > maxTranscriptHeight
     }
 
     static func responseHeight(_ response: String) -> CGFloat {
         guard !response.isEmpty else { return 0 }
-        return min(textHeight(response, font: bodyFont, width: responseTextWidth), maxResponseHeight)
+        return min(textHeight(response, font: bodyFont, width: responseTextWidth), maxTranscriptHeight)
     }
 
     /// Total card size, marble included.
     ///
     /// The diameter is reserved, not the overhang: half the marble sits above the body, and the
     /// other half covers the body's top — content has to clear both.
-    static func size(title: String?, prompt: String?, response: String) -> CGSize {
+    static func size(title: String?, prompt: String?, turn: TranscriptTurn, fallback: String) -> CGSize {
         var height = marbleDiameter + padding
-
-        let hasTitle = !(title?.isEmpty ?? true)
-        if hasTitle {
-            height += titleHeight + gap + ruleHeight
-        }
-
+        if !(title?.isEmpty ?? true) { height += titleHeight + gap + ruleHeight }
         let promptH = promptHeight(prompt)
-        if promptH > 0 {
-            height += gap + promptH
-        }
-
-        let responseH = responseHeight(response)
-        if responseH > 0 {
-            height += gap + responseH
-        }
-
+        if promptH > 0 { height += gap + promptH }
+        let transcript = transcriptHeight(turn, fallback: fallback)
+        if transcript > 0 { height += gap + transcript }
         height += padding
         return CGSize(width: width, height: ceil(height))
+    }
+
+    /// Convenience for the no-transcript case: an empty turn renders `response` as the
+    /// fallback line, which is exactly the pre-transcript layout.
+    static func size(title: String?, prompt: String?, response: String) -> CGSize {
+        size(title: title, prompt: prompt, turn: .empty, fallback: response)
     }
 
     /// Measured through TextKit rather than `NSAttributedString.boundingRect`, so the result

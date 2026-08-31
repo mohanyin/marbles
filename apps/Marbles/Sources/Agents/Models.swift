@@ -47,6 +47,8 @@ struct Agent: Identifiable, Equatable {
     var recentTools: [ToolEvent]
     var lastAssistantPreview: String?
     var lastUserPrompt: String?
+    /// Current turn's transcript, rebuilt from the session jsonl. Memory only.
+    var turn = TranscriptTurn.empty
     var title: String?
     var transcriptPath: String?
     var subagents: [SubagentRecord]
