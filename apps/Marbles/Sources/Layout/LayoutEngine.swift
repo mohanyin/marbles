@@ -31,7 +31,7 @@ enum LayoutEngine {
     static let maxAgents = 50
     static let emptyThickness: CGFloat = 10
     static let emptyLength: CGFloat = 36
-    static let focusCardSize = CGSize(width: 360, height: 312)
+    static let focusCardWidth: CGFloat = 360
     static let cardGap: CGFloat = 12
 
     /// Marble + indicator stack, not including the 12pt gap to the next marble.
@@ -46,7 +46,8 @@ enum LayoutEngine {
         orientation: LineOrientation,
         scrollOffset: CGFloat,
         availableLineLength: CGFloat,
-        cardTowardPositivePerpendicular: Bool
+        cardTowardPositivePerpendicular: Bool,
+        focusCardSize: CGSize
     ) -> LayoutResult {
         let ordered = Array(agents.prefix(maxAgents))
         let focused = mode.focusedAgentID
@@ -91,7 +92,8 @@ enum LayoutEngine {
             card = cardFrame(
                 hero: hero,
                 axis: orientation.axis,
-                towardPositive: cardTowardPositivePerpendicular
+                towardPositive: cardTowardPositivePerpendicular,
+                size: focusCardSize
             )
             card = clampCard(card!, dock: dock, availableAlong: availableLineLength, axis: orientation.axis)
         }
@@ -182,31 +184,44 @@ enum LayoutEngine {
         }
     }
 
+    /// Keep the card on screen without breaking its centring on the hovered marble.
+    ///
+    /// `SnapGeometry.origin(for:size:safe:)` centres the dock along its own axis, so there is
+    /// `(available - dockLength) / 2` of free screen on *each* side of the dock that the card may
+    /// use. Clamping to the dock's own bounds instead — as this did — pinned the card's leading
+    /// edge to the dock's leading edge whenever the hero sat near the start of the line, which
+    /// read as the card being left- or bottom-aligned rather than centred.
     private static func clampCard(_ card: CGRect, dock: CGRect, availableAlong: CGFloat, axis: LineAxis) -> CGRect {
         var frame = card
         switch axis {
         case .vertical:
-            let minY = min(dock.minY, 0)
-            let maxY = max(dock.maxY, availableAlong) - frame.height
-            let limit = max(minY, maxY)
-            frame.origin.y = min(max(frame.origin.y, minY), limit)
+            let slack = max(0, (availableAlong - dock.height) / 2)
+            let lower = dock.minY - slack
+            let upper = dock.maxY + slack - frame.height
+            frame.origin.y = min(max(frame.origin.y, lower), max(lower, upper))
         case .horizontal:
-            let minX = min(dock.minX, 0)
-            let maxX = max(dock.maxX, availableAlong) - frame.width
-            let limit = max(minX, maxX)
-            frame.origin.x = min(max(frame.origin.x, minX), limit)
+            let slack = max(0, (availableAlong - dock.width) / 2)
+            let lower = dock.minX - slack
+            let upper = dock.maxX + slack - frame.width
+            frame.origin.x = min(max(frame.origin.x, lower), max(lower, upper))
         }
         return frame
     }
 
-    private static func cardFrame(hero: MarbleFrame, axis: LineAxis, towardPositive: Bool) -> CGRect {
-        let size = focusCardSize
+    private static func cardFrame(
+        hero: MarbleFrame,
+        axis: LineAxis,
+        towardPositive: Bool,
+        size: CGSize
+    ) -> CGRect {
         switch axis {
         case .vertical:
             let x = towardPositive
                 ? hero.center.x + hero.size / 2 + cardGap
                 : hero.center.x - hero.size / 2 - cardGap - size.width
-            let y = hero.center.y - size.height / 2
+            // The marble overhang rides at the top (max-Y), so centre the body on the hero
+            // rather than the whole frame, or the card visually sits low.
+            let y = hero.center.y - (size.height - FocusCardMetrics.marbleOverhang) / 2
             return CGRect(x: x, y: y, width: size.width, height: size.height)
         case .horizontal:
             let x = hero.center.x - size.width / 2

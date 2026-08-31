@@ -8,9 +8,10 @@ enum FocusPreviewTests {
         statusFallback()
         toolLines()
         truncatesLongAssistant()
-        actionsFollowSource()
         showsSessionTitle()
         latestAssistantSkipsThinking()
+        latestUserTakesMostRecent()
+        promptReadsLastUserTurn()
         expandsTildeInTranscriptPath()
     }
 
@@ -53,21 +54,39 @@ enum FocusPreviewTests {
         TestRun.expect(line.hasSuffix("…"), "ellipsis")
     }
 
-    private static func actionsFollowSource() {
-        let cursor = FocusPreview.actions(for: Agent.make(id: "c", source: .cursor))
-        TestRun.expect(!cursor.showClaudeCode && cursor.showCursor, "cursor shows Open Cursor")
-        TestRun.expect(cursor.showTerminal && !cursor.showConductor, "cursor hides Conductor")
+    private static func latestUserTakesMostRecent() {
+        let lines = [
+            #"{"type":"user","message":{"role":"user","content":"first ask"}}"#,
+            #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"sure"}]}}"#,
+            #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x"}]}}"#,
+            #"{"type":"user","message":{"role":"user","content":"second ask"}}"#,
+        ].joined(separator: "\n")
+        let text = TranscriptPeek.latestUserText(data: Data(lines.utf8))
+        TestRun.expectEqual(text, "second ask", "latest user turn wins, tool results skipped")
 
-        let cli = FocusPreview.actions(for: Agent.make(id: "cli", source: .cli))
-        TestRun.expect(cli.showClaudeCode && !cli.showCursor, "cli shows Claude Code")
+        let sidechain = #"{"type":"user","isSidechain":true,"message":{"role":"user","content":"subagent"}}"#
+        let withSide = lines + "\n" + sidechain
+        TestRun.expectEqual(
+            TranscriptPeek.latestUserText(data: Data(withSide.utf8)),
+            "second ask",
+            "sidechain user turns are skipped"
+        )
+    }
 
-        let conductor = FocusPreview.actions(for: Agent.make(
-            id: "cd",
-            source: .conductor,
-            cwd: URL(fileURLWithPath: "/Users/x/conductor/workspaces/app/ws"),
-            conductorWorkspaceID: "ws"
-        ))
-        TestRun.expect(conductor.showConductor, "conductor cwd shows Open Conductor")
+    private static func promptReadsLastUserTurn() {
+        var agent = Agent.make(id: "p", source: .cli, status: .working)
+        TestRun.expect(FocusPreview.prompt(for: agent) == nil, "no prompt when unset")
+
+        agent.lastUserPrompt = "   "
+        TestRun.expect(FocusPreview.prompt(for: agent) == nil, "blank prompt collapses to nil")
+
+        agent.lastUserPrompt = "  fix the layout  "
+        TestRun.expectEqual(FocusPreview.prompt(for: agent), "fix the layout", "prompt is trimmed")
+
+        agent.lastUserPrompt = String(repeating: "x", count: FocusPreview.maxCharacters + 50)
+        let capped = FocusPreview.prompt(for: agent) ?? ""
+        TestRun.expectEqual(capped.count, FocusPreview.maxCharacters, "prompt truncates at the cap")
+        TestRun.expect(capped.hasSuffix("…"), "truncated prompt ends with an ellipsis")
     }
 
     private static func showsSessionTitle() {

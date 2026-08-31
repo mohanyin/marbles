@@ -37,11 +37,8 @@ Do **not** introduce Electron, a browser dashboard, a cloud backend, accounts, o
  ~/.claude/projects/**/*.jsonl ────────► │ Marbles.app      │
  claude PIDs (process scan)    ────────► │  Overlay + Metal │
                                          │  AgentStore      │
-                                         └────────┬─────────┘
-                                                  │ jump-in
-                    ┌──────────────┬──────────────┬──────────────┐
-                    ▼              ▼              ▼              ▼
-              Claude Code       Cursor       Terminal.*      Conductor
+                                         │  Focus card      │
+                                         └──────────────────┘
 ```
 
 **Trust boundary:** everything stays on localhost / the user’s home directory. The hook helper is the only process Claude Code launches. It must be readable, fast, and unable to block a tool call.
@@ -64,7 +61,7 @@ Ingest is **not** an open localhost API. `POST /hook` requires a per-machine tok
 8. Hooks are `async` and **always exit 0**. Missing Marbles ⇒ no-op, agents keep working.
 9. No telemetry. No upload of transcripts, prompts, or tool inputs.
 10. Focus must not become a second Claude Code (no file tree, no full transcript, popover ≤360pt wide).
-11. Jump-in opens the matching app. Session/tab targeting is best-effort; never open `claude://code/new` (that starts a different session).
+11. Focus is read-only. No jump-in, no composer — chat deep links can't reliably reach a terminal-invoked session (see §12).
 12. Install path for an engineer who already has Claude Code is **< 5 minutes**. Source builds are not that path.
 
 ---
@@ -92,7 +89,6 @@ marbles-v2/
       Render/                        # Metal renderer + hue filter
       Chips/                         # 3-light matrix
       Focus/                         # Popover UI, preview, actions
-      JumpIn/                        # Claude Code / Cursor / Terminal / Conductor
       Hooks/                         # settings.json merge / repair / undo
       Persistence/                   # seeds, snap, prefs
       Demo/                          # first-run demo marble
@@ -117,7 +113,7 @@ marbles-v2/
 
 | Process | Role | Lifetime |
 | --- | --- | --- |
-| `Marbles.app` | UI, Metal, AgentStore, ingest server, jump-in | Login item / user launched |
+| `Marbles.app` | UI, Metal, AgentStore, ingest server | Login item / user launched |
 | `marbles-hook` | Read hook JSON from stdin, POST, exit | Milliseconds per event |
 
 **Threads inside the app**
@@ -146,8 +142,7 @@ Each module has one owner. Cross-module calls go through the types in §8.
 | **Identity** | Deterministic `session_id` → `MarbleParams` | Animate status |
 | **Render** | Draw gem-smoke discs from identity + time uniforms | Hit-test policy |
 | **Chips** | 3-light matrix from status / current tool | Session identity |
-| **Focus** | Preview card, action buttons | Hook install |
-| **JumpIn** | Activate Claude Code / Cursor / Terminal / Conductor | Change agent status |
+| **Focus** | Preview card, sizing metrics, adaptive palette | Hook install |
 | **Hooks** | Idempotent merge into `~/.claude/settings.json` | Network except localhost (n/a) |
 | **Persistence** | Snap, seeds, prefs, launch-at-login | |
 | **Demo** | Synthetic agent on first launch only, after a 2h discovery miss | Survive after a real session appears; reappear on later empty launches |
@@ -548,7 +543,7 @@ Ingest decodes Claude stdin with `JSONDecoder.keyDecodingStrategy = .convertFrom
 | --- | --- | --- |
 | `hook_event_name` | `hookEventName` | Dispatch |
 | `session_id` or Cursor `conversation_id` | `sessionID` | Required; drop event if both missing |
-| `cwd` | `cwd` | Jump-in, Conductor detect |
+| `cwd` | `cwd` | Transcript path resolution, Conductor detect |
 | `transcript_path` | `transcriptPath` | On `Stop`, read the jsonl **tail** for the latest assistant text block. Do not read on tool events. |
 | `tool_name` | `toolName` | Preview / later chips |
 | `tool_input` | `toolInputSummary` | Extract only: Read/Edit/Write → basename of `file_path`; Bash/Shell → first 40 chars of `command`; else omit. Max **80** chars. Never persist the object. |
@@ -620,55 +615,55 @@ Dedup: same `session_id` or same (cwd + pid). PID reuse: if `pid` start time (or
 
 ---
 
-## 12. Jump-in
+## 12. Focus card
 
-v1 jump-in is **open the matching app**. There is no Focus composer and no keystroke injection.
+Focus is a read-only popover. There is no composer, no keystroke injection, and **no jump-in** —
+`claude://claude.ai/chat/<id>` only resolves sessions the desktop app itself created, so it is a
+guaranteed miss for terminal-invoked CLI sessions, and scripting a terminal to run
+`claude --resume` was not worth the Apple Events surface. The `JumpIn` module, the automation
+entitlement, and `NSAppleEventsUsageDescription` were all removed.
 
-### 12.1 Focus copy and chrome
+### 12.1 Anatomy
 
-Button order, left to right: **Open Claude Code** (hidden if `source == cursor`) · **Open Cursor** (shown if `source == cursor`) · **Open Terminal** · **Open Conductor** (hidden unless cwd is a Conductor workspace). Demo / injected marbles show the buttons **disabled**.
+Top to bottom, 15pt padding, 360pt wide, height sized to content:
 
-Disabled (not hidden) when the app is missing or Terminal has no `cwd`, with tooltip: “Claude Code isn’t installed”, “Cursor isn’t installed”, “No working directory”, “Can’t find this terminal”, “Conductor isn’t installed”.
+| Row | Spec |
+| --- | --- |
+| Marble | 72pt, top-centred, straddling the card's top edge — half above the body, half over it. Live-animated off the overlay motion clock. |
+| Title | 15pt medium, centred, single line, truncating tail. Hidden (with its rule) when the session has no title. |
+| Rule | 1pt hairline at 20% ink. |
+| Prompt | The human's last turn. 8pt corners, 20% ink fill, 10pt inner inset, text 14pt regular at 80% ink. Outer height caps at **72pt**, then scrolls. Row collapses when there is no prompt. |
+| Response | `FocusPreview.line(for:)` — 14pt regular at 95% ink. Caps at **200pt**, then scrolls. |
 
-Preview: PRD precedence (waiting → tool → assistant → status word). Scrollable, 13pt, cap 8000 chars. Not a full transcript.
+`FocusCardMetrics` owns every constant and the measurement, and is shared with `LayoutEngine` so
+the measured size and the drawn layout cannot drift. Text is measured through TextKit
+(`NSLayoutManager.usedRect`), not `NSAttributedString.boundingRect` — the latter under-reports by a
+point or two per line and clipped the last line of both regions.
 
-Return does not jump-in. Esc always dismisses Focus.
+The card's frame **includes the marble**: `marbleDiameter` is reserved, not the overhang, because
+half the marble sits above the body and the other half covers the body's top padding. Only the inner
+body view clips; the card itself keeps `masksToBounds = false` so the marble can hang out.
 
-### 12.2 Adapters
+### 12.2 Colour and background
 
-`JumpIn` owns routing. Focus never shells out itself. `AppLaunching` is the `NSWorkspace` seam so tests can fake installs and running apps.
+`CardPalette` is the only adaptive colour in the app: `NSColor(name:dynamicProvider:)` resolving to
+white on dark and black on light. Nothing may force an appearance on the overlay panel or the ink
+stops tracking.
 
-```swift
-enum JumpKind { case claudeCode, cursor, terminal, conductor }
+Background is `NSGlassEffectView` on macOS 26 (`#if compiler(>=6.2)` so the source still builds
+against older SDKs) and a **flat** adaptive panel before it. Deliberately not `NSVisualEffectView`:
+a `.behindWindow` material is composited by the window server and is not clipped by
+`layer.cornerRadius`, so a blurred card would have square corners on macOS 14/15.
 
-protocol AppLaunching {
-  func applicationExists(bundleID: String) -> Bool
-  func runningBundleIDs() -> Set<String>
-  func open(_ url: URL) throws
-  func openApplication(bundleID: String) throws
-  func open(_ folder: URL, bundleID: String) throws
-}
-```
+### 12.3 Prompt capture
 
-`JumpRouter.decision` returns visible / enabled / tooltip. `JumpRouter.open` launches. Demo and injected marbles stay visible and disabled (`tooltip`: “Demo.”).
+`Agent.lastUserPrompt` comes from the transcript tail via `TranscriptPeek.latestUserText`, mirroring
+`latestAssistantText`: same 256 KB tail window, same `isSidechain` skip, and it reuses the existing
+`userText` parser — which already drops tool results and `<…>`-wrapped scaffolding. Written in
+`refreshFromTranscript`, which already runs on `UserPromptSubmit`, so no new event plumbing. Memory
+only, capped at 8000 chars, cleared on `SessionStart`.
 
-| Target | Bundle ID (v1 lock; fix here if wrong) | Open |
-| --- | --- | --- |
-| Marbles | `dev.marbles.app` | — |
-| Claude Code app | `com.anthropic.claude-code` | `claude://claude.ai/chat/<session_id>` (documented existing-chat deep link). If that fails, activate the app. Do **not** open `claude://code/new` (that starts a different session). |
-| Cursor | `com.todesktop.230313mzl4w4u92`, then `com.cursor` | Open `cwd` with Cursor. Conversation-id targeting is stretch. |
-| Terminal.app | `com.apple.Terminal` | Open `cwd` with a running emulator if detected, else Terminal.app |
-| iTerm2 | `com.googlecode.iterm2` | |
-| Ghostty | `com.mitchellh.ghostty` | |
-| kitty | `net.kovidgoyal.kitty` | |
-| Warp | `dev.warp.Warp-Stable` | |
-| Conductor | `build.conductor.desktop` | Hide button if cwd is not a Conductor workspace; else activate Conductor |
-
-Terminal resolution: prefer a running emulator from the table, else `open -a Terminal <cwd>`. Pid → TTY targeting is stretch.
-
-**Bar for M3:** correct *app* ≥90%. Correct tab / Claude Code session is best-effort via the chat deep link.
-
-Accessibility / Automation / Notifications prompt on first use of that feature, not before the first marble.
+Esc always dismisses Focus.
 
 ---
 
@@ -707,7 +702,7 @@ Port constant: `Agents/IngestConstants.swift` `static let defaultPort = 17832`. 
 
 Until notarized: README step “Open anyway” (right-click) — still part of the 5-minute path.
 
-**First-run checklist** (menu-bar extra popover, not a wizard): Hooks installed / missing / error (Claude **and** Cursor files) · Claude Code detected · Cursor detected · Conductor detected · “Start a Claude Code or Cursor Agent session to see a live marble.” Demo Focus is allowed; jump-in buttons disabled; label the preview “Demo.”
+**First-run checklist** (menu-bar extra popover, not a wizard): Hooks installed / missing / error (Claude **and** Cursor files) · Claude Code detected · Cursor detected · Conductor detected · “Start a Claude Code or Cursor Agent session to see a live marble.” Demo Focus is allowed; label the preview “Demo.”
 
 ---
 
@@ -716,7 +711,7 @@ Until notarized: README step “Open anyway” (right-click) — still part of t
 | Layer | What |
 | --- | --- |
 | `LayoutTests` | 4 snap orientations; 36pt dock/focus; 10pt padding; 55pt stride; 9 visible then scroll; insertion-order pack; empty 10×36; cap 50. Run `./scripts/test.sh`. |
-| `JumpInTests` | visibility by source; demo/injected disabled; missing app tooltips; Claude chat URL (never `code/new`); Cursor opens cwd; Terminal prefers a running emulator |
+| `FocusCardMetricsTests` | overhang always reserved; empty prompt collapses its row; prompt caps at 72pt and response at 200pt; height monotonic in text length; width pinned to `LayoutEngine.focusCardWidth` |
 | `StatusTests` | reducer table in §8; error vs finished vs waiting vs PostToolUseFailure |
 | `IdentityTests` | same seed ⇒ same params; 3–5 colors; distortion/size ranges |
 | `HookContractTests` | helper exits 0 on refused connection and bad JSON; fixtures decode; ingest token match / reject |
@@ -760,7 +755,7 @@ Founder look-path after every stream (put this in the PR description):
 | **W3** | Lights + motion | Works against dummy *or* live store | W1, W2 | Thinking waves. Tool calls flash 1–2 whites. Waiting all white. Finished all green. Error all red. |
 | **W4** | Metal + Identity | Gem-smoke discs at 36pt | W1 | Distinct palettes, opaque discs, no per-marble glass. Same marble on a white Google Doc **and** a dark desktop. Debug cycle seeds. |
 | **W5** | Focus popover + preview | Actions land in W6 | W1, W2 | Preview copy order (waiting / tool / text). Hover a marble to enter Focus; hover off the pill+card returns to Default. Card stays on-screen at every snap. |
-| **W6** | Jump-in adapters | Claude Code / Cursor / Terminal / Conductor | W5 | Each visible **enabled** button opens the right **app** (Claude chat deep link when we have a session id). Cursor-sourced marbles show Open Cursor, not Claude Code. No reply field. |
+| **W6** | ~~Jump-in adapters~~ | **Cut.** Chat deep links only resolve sessions the desktop app created; scripting a terminal to `claude --resume` wasn't worth the Apple Events surface. | — | Removed in the card redesign — see §12. |
 | **W7** | Hook installer + demo + prefs | Repair / undo both configs | W2 | First-run checklist. Demo marble if empty. Confirm `~/.claude/settings.json` **and** `~/.cursor/hooks.json` contain `marbles-hook`. Undo removes only ours. Reduced motion snaps. |
 | **W8** | Packaging | cask / install.sh / notarize | W7 | Clean machine / other account: install in <5 min, see a marble. |
 
@@ -775,7 +770,7 @@ Suggested pairing: **W0→W1** and **W0→W2** in parallel after the panel exist
 | **M0 Skeleton** | W0, W1 | Drag, snap, three dummy marbles, Default + Focus |
 | **M1 Live agents** | W2, W3, W7 **hook merge only** | Real Claude **or** Cursor sessions; working/freeze/error hue; chips; bloom |
 | **M2 Material** | W4 | Gem-smoke opaque discs; seeded 3–5 color palettes |
-| **M3 Jump-in** | W5, W6 | Preview + open actions (Claude Code / Cursor / Terminal / Conductor) |
+| **M3 Focus card** | W5 | Marble + title + human prompt + agent response, content-sized |
 | **M4 Install** | W7 finish (demo, checklist, prefs), W8 | <5 min engineer path |
 
 ---
@@ -797,7 +792,7 @@ Suggested pairing: **W0→W1** and **W0→W2** in parallel after the panel exist
 | Time scale | 1.5 working/thinking, 0.25 waiting, 0.05 else | Status is speed |
 | Window | `.accessory` + `statusBar` + join-all | No Dock; no `.stationary` |
 | Ingest | Local HTTP :17832 + helper + `X-Marbles-Token` | Unauthenticated localhost POSTs must not mutate agents |
-| Reply | **Out of v1** — no Focus composer, no keystroke injection | Jump-in only |
+| Reply | **Out of v1** — no Focus composer, no keystroke injection | Read-only Focus |
 | Cursor agents | Native `~/.cursor/hooks.json`, same helper | Parallel API; don’t rely on third-party Claude import |
 | Cmd+K / Ask / Tab | Ignored | Avoid a marble per inline edit |
 | Manual test | Debug menu + look-gate per workstream | Founder judges pixels, not just tests |
@@ -812,11 +807,11 @@ Suggested pairing: **W0→W1** and **W0→W2** in parallel after the panel exist
 | Capability | When prompted | Info.plist / notes |
 | --- | --- | --- |
 | Notifications | First time completion notifications are enabled | `NSUserNotificationsUsageDescription` if required: “Marbles can notify you when an agent finishes.” Off by default. Tap opens Focus for that agent. |
-| Automation (Apple Events) | First jump-in to Terminal / iTerm / Conductor | `NSAppleEventsUsageDescription`: “Marbles brings the matching Terminal or Conductor window forward.” |
-| Accessibility | Not required for v1 jump-in (`NSWorkspace` only) | Do not prompt. |
+| Automation (Apple Events) | **Never** — no jump-in, entitlement and usage string removed | — |
+| Accessibility | Not required | Do not prompt. |
 | Files | None extra if we stay in the home folder via POSIX | Do not ask for Full Disk Access. If `~/.claude` is unreadable, first-run shows “Can’t read Claude sessions.” |
 | Local network | If macOS prompts for 127.0.0.1 | `NSLocalNetworkUsageDescription`: “Marbles receives local status from Claude Code hooks on this Mac.” |
-| Sandbox | **Off** | Sandbox would break hooks and jump-in. |
+| Sandbox | **Off** | Sandbox would break hook installation. |
 
 Do not request TCC before a marble is on screen.
 
@@ -825,7 +820,7 @@ Do not request TCC before a marble is on screen.
 ## 20. Open implementation risks
 
 1. **Window level vs. full-screen / Stage Manager** — needs device testing; may require a fallback “always on this Space only.”
-2. **Claude Code session-level activation** — `claude://claude.ai/chat/<id>` is documented for chats; Code-only sessions may fall back to activating the app.
+2. ~~**Claude Code session-level activation**~~ — resolved at W6: `claude://claude.ai/chat/<id>` only resolves sessions the desktop app itself created (`source == .claudeApp`); it returns "Session not found" for terminal-invoked CLI sessions, confirmed empirically against the shipped app. Those now resume via `claude --resume <id>` in a terminal instead (see §12.2).
 4. **Hook schema drift** — pin a fixture corpus of real payloads; treat unknown fields as ignored.
 5. **Metal + many displays / HDR** — keep color space sRGB/display-p3 consistent so hue-filter red is the same red on every screen.
 6. **Notch / safe area** — Layout must read `auxiliaryTopLeftArea` (or current AppKit equivalent), not hard-code 24pt.

@@ -109,11 +109,26 @@ final class OverlayRootView: NSView {
         hitTestKind(at: point).isInteractive
     }
 
-    func hitTestKind(at point: NSPoint) -> Hit {
-        if !focusCard.isHidden, focusCard.frame.contains(point) {
+    /// Slop added around the card (and the gap connecting it to the dock) for hover purposes only,
+    /// so a mouse path that isn't perfectly straight — or a fast flick — doesn't clip a dead zone
+    /// and drop Focus back to the dock before the pointer arrives. Real click hit-testing is
+    /// unaffected: only `.card`/`.none` classification here is widened, not what a click resolves to.
+    private static let hoverMargin: CGFloat = 24
+
+    /// `hoverSlop` widens the card (and the dock↔card bridge) so a moving pointer doesn't clip a
+    /// dead zone. Clicks must pass `false`: the padded rect overlaps the dock's near edge, and
+    /// classifying presses there as `.card` made that strip of the dock undraggable.
+    func hitTestKind(at point: NSPoint, hoverSlop: Bool = true) -> Hit {
+        let slop = hoverSlop ? Self.hoverMargin : 0
+        if !focusCard.isHidden, focusCard.frame.insetBy(dx: -slop, dy: -slop).contains(point) {
             return .card
         }
         if let layout = displayedLayout {
+            if hoverSlop, !focusCard.isHidden,
+               hoverBridgeContains(point, dock: layout.dockFrame, card: focusCard.frame)
+            {
+                return .card
+            }
             let ordered = layout.frames.sorted { $0.value.z > $1.value.z }
             for (id, frame) in ordered {
                 let dx = point.x - frame.center.x
@@ -132,11 +147,13 @@ final class OverlayRootView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        if !focusCard.isHidden, focusCard.frame.contains(point) {
-            let local = convert(point, to: focusCard)
+        // `point` is in the superview. `hitTest` on a subview wants the same space —
+        // converting into the flipped card first maps button clicks onto the preview.
+        let local = convert(point, from: superview)
+        if !focusCard.isHidden, focusCard.frame.contains(local) {
             return focusCard.hitTest(local) ?? focusCard
         }
-        if containsInteractivePoint(point) { return self }
+        if containsInteractivePoint(local) { return self }
         return nil
     }
 
@@ -154,10 +171,13 @@ final class OverlayRootView: NSView {
             }
         }
         layoutLights()
-        if case .focus(let id) = currentMode, let agent = agentsByID[id], !focusCard.isHidden {
-            focusCard.apply(agent: agent)
-        }
         submitMetal()
+        if !focusCard.isHidden,
+           let focused = currentMode.focusedAgentID,
+           let agent = agentsByID[focused]
+        {
+            focusCard.tickMotion(agent: agent, now: now, reducedMotion: reducedMotion)
+        }
     }
 
     private func submitMetal() {
@@ -222,6 +242,56 @@ final class OverlayRootView: NSView {
         let radius = min(bounds.width, bounds.height) / 2
         dockMask.frame = bounds
         dockMask.path = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    /// The card sits `LayoutEngine.cardGap` away from the dock. A mouse moving from a hovered
+    /// marble toward a card button crosses that gap; without this, `hitTestKind` returns `.none`
+    /// there and the hover-off logic closes Focus mid-transit, before the click lands. Padded by
+    /// `hoverMargin` so a non-straight path still lands inside it.
+    private func hoverBridgeContains(_ point: CGPoint, dock: CGRect, card: CGRect) -> Bool {
+        if let rect = horizontalGapRect(dock: dock, card: card),
+           rect.insetBy(dx: -Self.hoverMargin, dy: -Self.hoverMargin).contains(point)
+        {
+            return true
+        }
+        if let rect = verticalGapRect(dock: dock, card: card),
+           rect.insetBy(dx: -Self.hoverMargin, dy: -Self.hoverMargin).contains(point)
+        {
+            return true
+        }
+        return false
+    }
+
+    private func horizontalGapRect(dock: CGRect, card: CGRect) -> CGRect? {
+        let overlapY = min(dock.maxY, card.maxY) - max(dock.minY, card.minY)
+        guard overlapY > 0 else { return nil }
+        let minX: CGFloat
+        let maxX: CGFloat
+        if card.minX >= dock.maxX {
+            (minX, maxX) = (dock.maxX, card.minX)
+        } else if dock.minX >= card.maxX {
+            (minX, maxX) = (card.maxX, dock.minX)
+        } else {
+            return nil
+        }
+        guard maxX > minX else { return nil }
+        return CGRect(x: minX, y: max(dock.minY, card.minY), width: maxX - minX, height: overlapY)
+    }
+
+    private func verticalGapRect(dock: CGRect, card: CGRect) -> CGRect? {
+        let overlapX = min(dock.maxX, card.maxX) - max(dock.minX, card.minX)
+        guard overlapX > 0 else { return nil }
+        let minY: CGFloat
+        let maxY: CGFloat
+        if card.minY >= dock.maxY {
+            (minY, maxY) = (dock.maxY, card.minY)
+        } else if dock.minY >= card.maxY {
+            (minY, maxY) = (card.maxY, dock.minY)
+        } else {
+            return nil
+        }
+        guard maxY > minY else { return nil }
+        return CGRect(x: max(dock.minX, card.minX), y: minY, width: overlapX, height: maxY - minY)
     }
 
     private func stadiumContains(_ point: CGPoint, in rect: CGRect) -> Bool {

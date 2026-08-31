@@ -227,6 +227,7 @@ final class AgentStore {
                 agents[index].recentTools = []
                 clearTools(on: &agents[index], retireCurrent: false)
                 agents[index].lastAssistantPreview = nil
+                agents[index].lastUserPrompt = nil
                 agents[index].subagents = []
                 agents[index].turnOpen = false
                 agents[index].status = .idle
@@ -346,10 +347,19 @@ final class AgentStore {
         if let title = snapshot.title {
             agents[index].title = title
         }
-        if let text = TranscriptPeek.latestAssistantText(path: path) {
-            agents[index].lastAssistantPreview = text
+        let exchange = TranscriptPeek.latestExchange(path: path)
+        if let reply = exchange.reply {
+            agents[index].lastAssistantPreview = reply
         } else if let fallback, !fallback.isEmpty, agents[index].source == .cursor {
             agents[index].lastAssistantPreview = String(fallback.prefix(IngestConstants.previewLimit))
+        } else if exchange.prompt != nil {
+            // We read the transcript and the newest human turn has no reply yet — drop the
+            // previous turn's answer rather than showing it under the new question. Guarded on
+            // `prompt` so an unreadable transcript leaves a good preview alone.
+            agents[index].lastAssistantPreview = nil
+        }
+        if let prompt = exchange.prompt {
+            agents[index].lastUserPrompt = prompt
         }
     }
 
@@ -360,9 +370,12 @@ final class AgentStore {
             for delay in [400_000_000, 1_200_000_000] as [UInt64] {
                 try? await Task.sleep(nanoseconds: delay)
                 guard previewRetry[id] == token else { return }
-                let before = agent(id: id)?.lastAssistantPreview
+                let beforeReply = agent(id: id)?.lastAssistantPreview
+                let beforePrompt = agent(id: id)?.lastUserPrompt
                 refreshFromTranscript(id)
-                if agent(id: id)?.lastAssistantPreview != before {
+                if agent(id: id)?.lastAssistantPreview != beforeReply
+                    || agent(id: id)?.lastUserPrompt != beforePrompt
+                {
                     notify()
                 }
             }

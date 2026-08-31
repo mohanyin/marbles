@@ -36,8 +36,6 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
-  <key>NSAppleEventsUsageDescription</key>
-  <string>Marbles brings the matching Terminal or Conductor window forward.</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Marbles receives local status from Claude Code hooks on this Mac.</string>
 </dict>

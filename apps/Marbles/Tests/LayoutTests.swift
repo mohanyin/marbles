@@ -15,6 +15,7 @@ enum LayoutTests {
         cornersMigrateToRight()
         focusKeepsMarbleSize()
         focusCardStaysOnScreen()
+        focusCardCentresOnHero()
         focusCardIsCompact()
         dockStaysCenteredWhenCardOpens()
         scrollSnapsToItems()
@@ -160,6 +161,7 @@ enum LayoutTests {
         let roster = agents(count: 3)
         let hero = roster[0].id
         let safe = NSRect(x: 12, y: 12, width: 1416, height: 876)
+        for (label, cardSize) in [("short", sampleCardSize), ("max", maxCardSize)] {
         for point in SnapPoint.allCases {
             let layout = LayoutEngine.layout(
                 agents: roster,
@@ -167,7 +169,8 @@ enum LayoutTests {
                 orientation: SnapGeometry.orientation(for: point),
                 scrollOffset: 0,
                 availableLineLength: point == .top || point == .bottom ? safe.width : safe.height,
-                cardTowardPositivePerpendicular: SnapGeometry.cardTowardPositive(for: point)
+                cardTowardPositivePerpendicular: SnapGeometry.cardTowardPositive(for: point),
+                focusCardSize: cardSize
             )
             guard let card = layout.focusCardFrame else {
                 TestRun.expect(false, "focus card missing at \(point)")
@@ -184,13 +187,50 @@ enum LayoutTests {
             let expectedDock = SnapGeometry.origin(for: point, size: layout.dockFrame.size, safe: safe)
             TestRun.expectNear(dockScreen.minX, expectedDock.x, "\(point) dock stays at snap")
             TestRun.expectNear(dockScreen.minY, expectedDock.y, "\(point) dock y at snap")
-            TestRun.expect(cardScreen.minX >= safe.minX - 0.5, "\(point) card left")
-            TestRun.expect(cardScreen.maxX <= safe.maxX + 0.5, "\(point) card right")
+            TestRun.expect(cardScreen.minX >= safe.minX - 0.5, "\(label) \(point) card left")
+            TestRun.expect(cardScreen.maxX <= safe.maxX + 0.5, "\(label) \(point) card right")
+            TestRun.expect(cardScreen.minY >= safe.minY - 0.5, "\(label) \(point) card bottom")
+            TestRun.expect(cardScreen.maxY <= safe.maxY + 0.5, "\(label) \(point) card top")
+        }
+        }
+    }
+
+    /// The card must line up with the marble it belongs to on the shared axis, including when
+    /// the hero sits at either end of the line — the clamp used to pin it to the dock's edge.
+    private static func focusCardCentresOnHero() {
+        let roster = agents(count: 5)
+        let safe = NSRect(x: 12, y: 12, width: 1416, height: 876)
+        let overhang = FocusCardMetrics.marbleOverhang
+        for point in SnapPoint.allCases {
+            for heroIndex in [0, 2, 4] {
+                let layout = LayoutEngine.layout(
+                    agents: roster,
+                    mode: .focus(roster[heroIndex].id),
+                    orientation: SnapGeometry.orientation(for: point),
+                    scrollOffset: 0,
+                    availableLineLength: point == .top || point == .bottom ? safe.width : safe.height,
+                    cardTowardPositivePerpendicular: SnapGeometry.cardTowardPositive(for: point),
+                    focusCardSize: sampleCardSize
+                )
+                guard let card = layout.focusCardFrame,
+                      let hero = layout.frames[roster[heroIndex].id]
+                else {
+                    TestRun.expect(false, "\(point)/\(heroIndex) missing card")
+                    continue
+                }
+                switch SnapGeometry.orientation(for: point).axis {
+                case .horizontal:
+                    TestRun.expectNear(card.midX, hero.center.x, "\(point)/\(heroIndex) card centred on hero x")
+                case .vertical:
+                    let bodyMidY = card.minY + (card.height - overhang) / 2
+                    TestRun.expectNear(bodyMidY, hero.center.y, "\(point)/\(heroIndex) card centred on hero y")
+                }
+            }
         }
     }
 
     private static func focusCardIsCompact() {
-        TestRun.expect(LayoutEngine.focusCardSize.width <= 360, "card ≤360pt")
+        TestRun.expect(LayoutEngine.focusCardWidth <= 360, "card ≤360pt")
         let roster = agents(count: 3)
         let focus = dockLayout(roster, mode: .focus(roster[0].id))
         TestRun.expect(focus.focusCardFrame != nil, "focus has a card")

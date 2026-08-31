@@ -22,6 +22,13 @@ enum FocusPreview {
         return statusWord(agent.status)
     }
 
+    /// The human's most recent turn. `nil` when the transcript hasn't yielded one yet —
+    /// the card collapses that row rather than showing a placeholder.
+    static func prompt(for agent: Agent) -> String? {
+        guard let text = trimmed(agent.lastUserPrompt) else { return nil }
+        return truncate(text)
+    }
+
     static func toolLine(_ tool: ToolEvent) -> String {
         let file = tool.fileHint.flatMap(trimmed)
         switch tool.name {
@@ -59,22 +66,6 @@ enum FocusPreview {
     static func truncate(_ text: String) -> String {
         if text.count <= maxCharacters { return text }
         return String(text.prefix(maxCharacters - 1)) + "…"
-    }
-
-    static func actions(for agent: Agent) -> Actions {
-        Actions(
-            showClaudeCode: JumpRouter.isVisible(.claudeCode, agent: agent),
-            showCursor: JumpRouter.isVisible(.cursor, agent: agent),
-            showTerminal: JumpRouter.isVisible(.terminal, agent: agent),
-            showConductor: JumpRouter.isVisible(.conductor, agent: agent)
-        )
-    }
-
-    struct Actions: Equatable {
-        var showClaudeCode: Bool
-        var showCursor: Bool
-        var showTerminal: Bool
-        var showConductor: Bool
     }
 
     private static func displayName(_ name: String) -> String {

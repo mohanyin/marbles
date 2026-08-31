@@ -46,6 +46,7 @@ struct Agent: Identifiable, Equatable {
     var toolHoldUntil: Date?
     var recentTools: [ToolEvent]
     var lastAssistantPreview: String?
+    var lastUserPrompt: String?
     var title: String?
     var transcriptPath: String?
     var subagents: [SubagentRecord]
@@ -71,6 +72,7 @@ struct Agent: Identifiable, Equatable {
         cwd: URL? = nil,
         conductorWorkspaceID: String? = nil,
         lastAssistantPreview: String? = nil,
+        lastUserPrompt: String? = nil,
         title: String? = nil,
         transcriptPath: String? = nil,
         lastEventAt: Date? = nil,
@@ -90,6 +92,7 @@ struct Agent: Identifiable, Equatable {
             toolHoldUntil: nil,
             recentTools: [],
             lastAssistantPreview: lastAssistantPreview,
+            lastUserPrompt: lastUserPrompt,
             title: title,
             transcriptPath: transcriptPath,
             subagents: [],

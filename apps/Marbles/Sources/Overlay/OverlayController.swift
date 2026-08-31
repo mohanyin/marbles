@@ -21,7 +21,6 @@ final class OverlayController {
     private var animation: FrameAnimation?
 
     private var drag: DragState?
-    private var pendingMarbleClick: AgentID?
     private var lastInteractionWasOverlay = false
     private var motionTimer: Timer?
     private var scrollSnapTimer: Timer?
@@ -151,9 +150,6 @@ final class OverlayController {
         panel.contentView = view
         self.panel = panel
         self.rootView = view
-        view.focusCard.onJump = { [weak self] kind in
-            self?.jump(kind)
-        }
         return panel
     }
 
@@ -233,6 +229,17 @@ final class OverlayController {
         }
     }
 
+    /// Measured size of the card for the focused agent. `.zero` when nothing is focused —
+    /// `LayoutEngine` only reads it when a hero marble resolves.
+    private func focusCardSize() -> CGSize {
+        guard let id = focusedID, let agent = store.agent(id: id) else { return .zero }
+        return FocusCardMetrics.size(
+            title: FocusPreview.title(for: agent),
+            prompt: FocusPreview.prompt(for: agent),
+            response: FocusPreview.line(for: agent)
+        )
+    }
+
     private func relayout(animated: Bool) {
         guard let panel else { return }
         let screen = screenForPanel()
@@ -252,7 +259,8 @@ final class OverlayController {
             orientation: orientation,
             scrollOffset: scrollOffset,
             availableLineLength: available,
-            cardTowardPositivePerpendicular: cardPositive
+            cardTowardPositivePerpendicular: cardPositive,
+            focusCardSize: focusCardSize()
         )
         scrollOffset = target.scrollOffset
 
@@ -398,7 +406,7 @@ final class OverlayController {
     }
 
     private func handleHover() {
-        guard drag == nil, pendingMarbleClick == nil, NSEvent.pressedMouseButtons == 0 else { return }
+        guard drag == nil, NSEvent.pressedMouseButtons == 0 else { return }
         guard let panel, let rootView, panel.isVisible else { return }
         let windowPoint = panel.convertPoint(fromScreen: NSEvent.mouseLocation)
         let point = rootView.convert(windowPoint, from: nil)
@@ -418,7 +426,8 @@ final class OverlayController {
         guard let panel, let rootView else { return event }
         let point = rootView.convert(event.locationInWindow, from: nil)
         let focused = mode.mode != .dock
-        switch rootView.hitTestKind(at: point) {
+        let kind = rootView.hitTestKind(at: point, hoverSlop: false)
+        switch kind {
         case .none:
             if focused {
                 lastInteractionWasOverlay = true
@@ -429,22 +438,18 @@ final class OverlayController {
         case .card:
             lastInteractionWasOverlay = true
             return event
-        case .dock:
+        case .dock, .marble:
             lastInteractionWasOverlay = true
-            if focused {
-                mode.clickOutside()
-                return nil
-            }
-            drag = DragState(startScreen: NSEvent.mouseLocation, startOrigin: panel.frame.origin, hit: .dock)
-            return nil
-        case .marble(let id):
-            lastInteractionWasOverlay = true
-            updateKeyStatus()
-            if focused {
-                pendingMarbleClick = id
-            } else {
-                drag = DragState(startScreen: NSEvent.mouseLocation, startOrigin: panel.frame.origin, hit: .marble(id))
-            }
+            if case .marble = kind { updateKeyStatus() }
+            // Arm a drag even while Focus is open. Hovering a marble opens Focus, so gating the
+            // drag on `!focused` meant the only draggable spots were the dock margins between
+            // marbles. Click vs. drag is settled on mouse-up by `drag.moved`.
+            drag = DragState(
+                startScreen: NSEvent.mouseLocation,
+                startOrigin: panel.frame.origin,
+                hit: kind,
+                wasFocused: focused
+            )
             return nil
         }
     }
@@ -461,8 +466,13 @@ final class OverlayController {
         guard drag.moved else { return }
         var origin = CGPoint(x: drag.startOrigin.x + dx, y: drag.startOrigin.y + dy)
         let visible = SnapGeometry.safeFrame(of: screenForPanel())
-        origin.x = min(max(origin.x, visible.minX), visible.maxX - panel.frame.width)
-        origin.y = min(max(origin.y, visible.minY), visible.maxY - panel.frame.height)
+        // Keep the *dock* on screen, not the panel: with Focus open the panel also spans the
+        // card, and clamping that would stop the dock well short of the screen edges.
+        let dockRect = currentLayout?.dockFrame ?? CGRect(origin: .zero, size: panel.frame.size)
+        var dockOrigin = CGPoint(x: origin.x + dockRect.minX, y: origin.y + dockRect.minY)
+        dockOrigin.x = min(max(dockOrigin.x, visible.minX), visible.maxX - dockRect.width)
+        dockOrigin.y = min(max(dockOrigin.y, visible.minY), visible.maxY - dockRect.height)
+        origin = CGPoint(x: dockOrigin.x - dockRect.minX, y: dockOrigin.y - dockRect.minY)
         panel.setFrameOrigin(origin)
         snap = .free(
             x: Double(origin.x - screenForPanel().frame.origin.x),
@@ -472,11 +482,6 @@ final class OverlayController {
     }
 
     private func handleMouseUp(_ event: NSEvent) {
-        if let id = pendingMarbleClick {
-            pendingMarbleClick = nil
-            mode.clickMarble(id)
-            return
-        }
         guard let drag else { return }
         defer { self.drag = nil }
         if drag.moved {
@@ -487,8 +492,14 @@ final class OverlayController {
             }
             return
         }
-        if case .marble(let id) = drag.hit {
+        // A press that never moved is a click.
+        switch drag.hit {
+        case .marble(let id):
             mode.clickMarble(id)
+        case .dock:
+            if drag.wasFocused { mode.clickOutside() }
+        case .card, .none:
+            break
         }
     }
 
@@ -522,15 +533,6 @@ final class OverlayController {
         mode.escape()
     }
 
-    private func jump(_ kind: JumpKind) {
-        guard let id = focusedID, let agent = store.agent(id: id) else { return }
-        do {
-            try JumpRouter.open(kind, agent: agent)
-        } catch {
-            return
-        }
-    }
-
     private func updateIgnoreMouseEvents() {
         guard let panel, panel.isVisible else { return }
         let over = containsScreenPoint(NSEvent.mouseLocation)
@@ -551,6 +553,8 @@ private struct DragState {
     var startScreen: NSPoint
     var startOrigin: NSPoint
     var hit: OverlayRootView.Hit
+    /// Focus was open when the press landed — a press that never moves dismisses it on release.
+    var wasFocused: Bool
     var moved = false
 }
 

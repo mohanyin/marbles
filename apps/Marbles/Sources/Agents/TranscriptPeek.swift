@@ -47,6 +47,71 @@ enum TranscriptPeek {
 
     /// Latest visible assistant reply (text blocks only — not thinking).
     static func latestAssistantText(path: String?) -> String? {
+        tailData(path: path).flatMap(latestAssistantText(data:))
+    }
+
+    /// Latest human turn. Tool results and `<…>`-wrapped scaffolding are skipped by `userText`.
+    static func latestUserText(path: String?) -> String? {
+        tailData(path: path).flatMap(latestUserText(data:))
+    }
+
+    /// The current turn: the human's latest message and only the reply that *follows* it.
+    ///
+    /// A reply is deliberately dropped when a newer human turn appears after it — otherwise the
+    /// card shows the previous answer beside the new question and reads as a response to it.
+    /// Tool results and other non-human `type == "user"` rows don't open a new turn.
+    static func latestExchange(path: String?) -> (prompt: String?, reply: String?) {
+        guard let data = tailData(path: path) else { return (nil, nil) }
+        return latestExchange(data: data)
+    }
+
+    static func latestExchange(data: Data) -> (prompt: String?, reply: String?) {
+        var prompt: String?
+        var reply: String?
+        guard let text = String(data: data, encoding: .utf8) else { return (nil, nil) }
+        text.enumerateLines { line, _ in
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
+                return
+            }
+            if obj["isSidechain"] as? Bool == true { return }
+            let type = obj["type"] as? String
+            let role = (obj["message"] as? [String: Any])?["role"] as? String
+
+            if type == "user" || role == "user" {
+                // Only a real human message opens a turn; tool results yield nil here.
+                if let value = userText(obj) {
+                    prompt = cap(value)
+                    reply = nil
+                }
+                return
+            }
+            if type == "assistant" || role == "assistant", let value = assistantText(obj) {
+                reply = value
+            }
+        }
+        return (prompt, reply)
+    }
+
+    static func latestUserText(data: Data) -> String? {
+        var latest: String?
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        text.enumerateLines { line, _ in
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
+                return
+            }
+            let type = obj["type"] as? String
+            let role = (obj["message"] as? [String: Any])?["role"] as? String
+            if obj["isSidechain"] as? Bool == true { return }
+            guard type == "user" || role == "user" else { return }
+            if let value = userText(obj) {
+                latest = cap(value)
+            }
+        }
+        return latest
+    }
+
+    /// Last `tailLimit` bytes, minus the leading partial line.
+    private static func tailData(path: String?) -> Data? {
         guard let path, !path.isEmpty else { return nil }
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
@@ -57,7 +122,7 @@ enum TranscriptPeek {
         if start > 0, let newline = data.firstIndex(of: UInt8(ascii: "\n")) {
             data = Data(data[(newline + 1)...])
         }
-        return latestAssistantText(data: data)
+        return data
     }
 
     static func latestAssistantText(data: Data) -> String? {
@@ -153,8 +218,12 @@ enum TranscriptPeek {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return nil }
-        if trimmed.count <= IngestConstants.previewLimit { return trimmed }
-        return String(trimmed.prefix(IngestConstants.previewLimit - 1)) + "…"
+        return cap(trimmed)
+    }
+
+    private static func cap(_ text: String) -> String {
+        if text.count <= IngestConstants.previewLimit { return text }
+        return String(text.prefix(IngestConstants.previewLimit - 1)) + "…"
     }
 
     private static func string(_ value: Any?) -> String? {
