@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 enum IdentityTests {
     static func run() {
@@ -7,6 +8,8 @@ enum IdentityTests {
         colorCountsCoverRange()
         nextSeedChangesPalette()
         debugSeedsAreDistinct()
+        paletteWalkProducesDistinctStops()
+        paletteStaysCohesive()
     }
 
     private static func sameSeedIsDeterministic() {
@@ -52,6 +55,42 @@ enum IdentityTests {
         let seed: UInt64 = 10
         let next = Identity.nextSeed(seed)
         TestRun.expect(Identity.params(seed: next) != Identity.params(seed: seed), "cycle changes palette")
+    }
+
+    /// A stalled walk would hand back the same point repeatedly, which reads as
+    /// a flat marble rather than an obvious crash.
+    private static func paletteWalkProducesDistinctStops() {
+        for index in 0..<40 {
+            let p = Identity.params(seed: Identity.sheetSeed(at: index))
+            for i in 1..<p.colors.count {
+                let d = simd_distance(p.colors[i - 1], p.colors[i])
+                TestRun.expect(d > 0.001, "stop \(i) moved, seed index \(index)")
+            }
+            TestRun.expect(
+                simd_distance(p.colors[p.colors.count - 1], p.colorBack) > 0.001,
+                "colorBack differs from last stop, seed index \(index)"
+            )
+        }
+    }
+
+    /// The point of the attractor walk: stops inside one marble sit closer
+    /// together than independently drawn colors would. Random RGB averages well
+    /// above this bound, so the check fails if the walk is bypassed.
+    private static func paletteStaysCohesive() {
+        var total: Float = 0
+        var seen = 0
+        for index in 0..<40 {
+            let p = Identity.params(seed: Identity.sheetSeed(at: index))
+            var centroid = SIMD4<Float>(repeating: 0)
+            for c in p.colors { centroid += c }
+            centroid /= Float(p.colors.count)
+            for c in p.colors {
+                total += simd_distance(SIMD3<Float>(c.x, c.y, c.z), SIMD3<Float>(centroid.x, centroid.y, centroid.z))
+                seen += 1
+            }
+        }
+        let mean = total / Float(seen)
+        TestRun.expect(mean < 0.30, "mean within-marble spread \(mean) stays cohesive")
     }
 
     private static func debugSeedsAreDistinct() {
