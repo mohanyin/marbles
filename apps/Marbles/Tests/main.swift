@@ -14,6 +14,7 @@ struct MarblesTestRunner {
         FocusPreviewTests.run()
         FocusCardMetricsTests.run()
         TranscriptTests.run()
+        MarkdownTests.run()
         HooksMergeTests.run()
         DemoTests.run()
         if TestRun.failures > 0 {
