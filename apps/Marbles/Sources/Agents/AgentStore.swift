@@ -12,6 +12,9 @@ final class AgentStore {
     private var previewRetry: [AgentID: Int] = [:]
     /// One reader per session: cold load once, then incremental appends (PRD §7).
     private var readers: [AgentID: TranscriptReader] = [:]
+    /// At most one watcher, for whichever agent has a Focus card open.
+    private var watcher: TranscriptWatcher?
+    private var watchedID: AgentID?
 
     init(seeds: SeedStore = SeedStore()) {
         self.seeds = seeds
@@ -174,6 +177,30 @@ final class AgentStore {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         requestBloom(index: index, force: true)
         notify()
+    }
+
+    /// Follow `id`'s transcript live while its card is open. Passing nil tears the watcher down.
+    ///
+    /// Only the focused agent is watched: liveness matters for the transcript you are reading, and
+    /// everything else stays on the hook stream.
+    func watchTranscript(for id: AgentID?) {
+        guard watchedID != id else { return }
+        watcher?.stop()
+        watcher = nil
+        watchedID = id
+
+        guard let id, let agent = agent(id: id) else { return }
+        let path = TranscriptPeek.resolvedPath(
+            sessionID: agent.id,
+            cwd: agent.cwd?.path,
+            explicit: agent.transcriptPath
+        )
+        guard let path else { return }
+        watcher = TranscriptWatcher(path: path) { [weak self] in
+            guard let self, self.watchedID == id else { return }
+            self.refreshFromTranscript(id)
+            self.notify()
+        }
     }
 
     func advanceAnimationTime(_ dt: Float, now: Date = Date(), reducedMotion: Bool = false) {
@@ -412,6 +439,9 @@ final class AgentStore {
     private func pruneReaders() {
         let live = Set(agents.map(\.id))
         readers = readers.filter { live.contains($0.key) }
+        if let watchedID, !live.contains(watchedID) {
+            watchTranscript(for: nil)
+        }
     }
 
     private func notify() {

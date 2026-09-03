@@ -8,9 +8,11 @@ import AppKit
 final class TranscriptView: FlippedView {
     private var runViews: [NSView] = []
     private(set) var contentHeight: CGFloat = 0
+    /// Raised when a run is clicked open or shut — the card has to remeasure and relayout.
+    var onToggleRun: (([TranscriptToolCall], Bool) -> Void)?
 
     /// Rebuild for `turn`. `fallback` is the status word shown before any step lands (PRD §5.2).
-    func apply(turn: TranscriptTurn, fallback: String) {
+    func apply(turn: TranscriptTurn, fallback: String, expansion: TranscriptExpansion) {
         runViews.forEach { $0.removeFromSuperview() }
         runViews = []
 
@@ -29,8 +31,9 @@ final class TranscriptView: FlippedView {
             for (index, run) in runs.enumerated() {
                 if index > 0 { y += metrics.runSpacing }
                 let isLast = index == runs.count - 1
-                let height = metrics.runHeight(run, isLast: isLast)
-                let view = Self.view(for: run, expanded: metrics.runIsExpanded(run, isLast: isLast), width: width)
+                let height = metrics.runHeight(run, isLast: isLast, expansion: expansion)
+                let expanded = metrics.runIsExpanded(run, isLast: isLast, expansion: expansion)
+                let view = makeView(for: run, expanded: expanded, isLast: isLast, width: width)
                 view.frame = NSRect(x: 0, y: y, width: width, height: height)
                 add(view)
                 y += height
@@ -49,14 +52,24 @@ final class TranscriptView: FlippedView {
 
     // MARK: - Row construction
 
-    private static func view(for run: TranscriptRun, expanded: Bool, width: CGFloat) -> NSView {
+    private func makeView(
+        for run: TranscriptRun,
+        expanded: Bool,
+        isLast: Bool,
+        width: CGFloat
+    ) -> NSView {
         switch run {
         case .prose(let text):
-            return proseStack(text, width: width)
+            return Self.proseStack(text, width: width)
         case .thinking:
-            return labelRow("Thinking…", color: CardPalette.ink.withAlphaComponent(0.45))
+            return Self.labelRow("Thinking…", color: CardPalette.ink.withAlphaComponent(0.45))
         case .tools(let calls):
-            return expanded ? toolStack(calls, width: width) : collapsedRow(calls)
+            let body = expanded ? Self.toolStack(calls, width: width) : Self.collapsedRow(calls)
+            // Only multi-call runs are worth a click; a single call already shows everything.
+            guard calls.count > 1 else { return body }
+            return ToggleRunView(content: body) { [weak self] in
+                self?.onToggleRun?(calls, isLast)
+            }
         }
     }
 
@@ -136,9 +149,15 @@ final class TranscriptView: FlippedView {
 
     private static func collapsedRow(_ calls: [TranscriptToolCall]) -> NSView {
         let failed = calls.contains { $0.status == .failed }
-        let text = calls.count == 1
-            ? calls[0].label
-            : "Ran \(calls.count) commands"
+        let running = calls.contains { $0.status == .running }
+        let text: String
+        if calls.count == 1 {
+            text = calls[0].label
+        } else if running {
+            text = "Running \(calls.count) commands…"
+        } else {
+            text = "Ran \(calls.count) commands"
+        }
         return labelRow(
             text,
             color: failed ? errorColor : CardPalette.ink.withAlphaComponent(0.7)
@@ -255,5 +274,37 @@ final class CodeBlockView: NSView {
             layer?.backgroundColor = CardPalette.ink.withAlphaComponent(0.08).cgColor
             text.textColor = CardPalette.ink.withAlphaComponent(0.85)
         }
+    }
+}
+
+/// Wraps a tool run so clicking it opens or collapses the run.
+///
+/// A plain `mouseDown` override rather than a button: the rows are laid out by hand at measured
+/// heights, and a button's own intrinsic sizing and focus ring would fight that.
+private final class ToggleRunView: NSView {
+    private let onClick: () -> Void
+
+    init(content: NSView, onClick: @escaping () -> Void) {
+        self.onClick = onClick
+        super.init(frame: .zero)
+        content.autoresizingMask = [.width, .height]
+        addSubview(content)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        subviews.first?.frame = bounds
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }

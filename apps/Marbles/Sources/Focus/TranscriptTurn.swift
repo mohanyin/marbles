@@ -83,6 +83,43 @@ struct TranscriptTurn: Equatable {
     }
 }
 
+/// Which tool runs are open.
+///
+/// The default is the PRD's rule — the newest run stays expanded while it is still working — but
+/// a click overrides it in either direction, and that override has to survive the rebuilds that
+/// every refresh triggers. Runs are keyed by their first tool call's id, which is stable for the
+/// life of the turn.
+struct TranscriptExpansion: Equatable {
+    private var opened: Set<String> = []
+    private var closed: Set<String> = []
+
+    static func key(_ calls: [TranscriptToolCall]) -> String? { calls.first?.id }
+
+    func isExpanded(_ calls: [TranscriptToolCall], isLast: Bool) -> Bool {
+        guard let key = Self.key(calls) else { return false }
+        if opened.contains(key) { return true }
+        if closed.contains(key) { return false }
+        return isLast && calls.contains { $0.status == .running }
+    }
+
+    mutating func toggle(_ calls: [TranscriptToolCall], isLast: Bool) {
+        guard let key = Self.key(calls) else { return }
+        if isExpanded(calls, isLast: isLast) {
+            opened.remove(key)
+            closed.insert(key)
+        } else {
+            closed.remove(key)
+            opened.insert(key)
+        }
+    }
+
+    /// A new turn clears every override — the ids are gone anyway.
+    mutating func reset() {
+        opened = []
+        closed = []
+    }
+}
+
 /// Incremental line-by-line parser over a Claude Code session jsonl.
 ///
 /// Feed it bytes with `consume`; it keeps only the current turn. A new human message resets the

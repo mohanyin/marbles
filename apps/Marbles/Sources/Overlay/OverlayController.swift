@@ -56,6 +56,7 @@ final class OverlayController {
     }
 
     func hide() {
+        store.watchTranscript(for: nil)
         panel?.orderOut(nil)
         stopMotionClock()
         stopMouseTracking()
@@ -150,6 +151,9 @@ final class OverlayController {
         panel.contentView = view
         self.panel = panel
         self.rootView = view
+        view.focusCard.onRequestResize = { [weak self] in
+            self?.relayout(animated: true)
+        }
         return panel
     }
 
@@ -161,6 +165,8 @@ final class OverlayController {
         if case .focus(let id) = newMode {
             scrollFocused(id)
         }
+        // Live transcript only while a card is open on that agent (PRD §7).
+        store.watchTranscript(for: newMode.focusedAgentID)
         relayout(animated: true)
     }
 
@@ -233,12 +239,16 @@ final class OverlayController {
     /// `LayoutEngine` only reads it when a hero marble resolves.
     private func focusCardSize() -> CGSize {
         guard let id = focusedID, let agent = store.agent(id: id) else { return .zero }
-        return FocusCardMetrics.size(
-            title: FocusPreview.title(for: agent),
-            prompt: FocusPreview.prompt(for: agent),
-            turn: agent.turn,
-            fallback: FocusPreview.line(for: agent)
-        )
+        // Ask the card: expansion state lives there and changes its height.
+        guard let card = rootView?.focusCard else {
+            return FocusCardMetrics.size(
+                title: FocusPreview.title(for: agent),
+                prompt: FocusPreview.prompt(for: agent),
+                turn: agent.turn,
+                fallback: FocusPreview.line(for: agent)
+            )
+        }
+        return card.desiredSize(for: agent)
     }
 
     private func relayout(animated: Bool) {

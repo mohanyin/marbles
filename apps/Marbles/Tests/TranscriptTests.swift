@@ -16,6 +16,7 @@ enum TranscriptTests {
         readerFindsTurnBoundary()
         readerAppendsIncrementally()
         readerRestartsOnTruncation()
+        expansionFollowsDefaultThenClicks()
     }
 
     // MARK: - Fixtures
@@ -208,6 +209,43 @@ enum TranscriptTests {
     }
 
     // MARK: - Reader
+
+    /// Expansion has to survive the rebuild that every refresh triggers, and a click must win
+    /// over the default in both directions.
+    private static func expansionFollowsDefaultThenClicks() {
+        let done = TranscriptToolCall(id: "a", name: "Bash", target: "ls", status: .succeeded)
+        let running = TranscriptToolCall(id: "b", name: "Bash", target: "ls", status: .running)
+        var expansion = TranscriptExpansion()
+
+        // Default: newest and still working is open, everything else shut.
+        TestRun.expect(expansion.isExpanded([done, running], isLast: true), "newest running run is open")
+        TestRun.expect(!expansion.isExpanded([done, running], isLast: false), "older run is shut")
+        TestRun.expect(!expansion.isExpanded([done, done], isLast: true), "finished run is shut")
+
+        // A click collapses the run the default had opened, and it stays collapsed.
+        expansion.toggle([done, running], isLast: true)
+        TestRun.expect(!expansion.isExpanded([done, running], isLast: true), "click shuts an open run")
+        expansion.toggle([done, running], isLast: true)
+        TestRun.expect(expansion.isExpanded([done, running], isLast: true), "clicking again reopens it")
+
+        // A click opens a finished run that the default would leave shut.
+        var other = TranscriptExpansion()
+        other.toggle([done, done], isLast: false)
+        TestRun.expect(other.isExpanded([done, done], isLast: false), "click opens a shut run")
+
+        // Runs are keyed by their first call, so status changes do not lose the override.
+        var promoted = TranscriptExpansion()
+        promoted.toggle([running, done], isLast: true)
+        let finished = [TranscriptToolCall(id: "b", name: "Bash", target: "ls", status: .succeeded), done]
+        TestRun.expect(
+            !promoted.isExpanded(finished, isLast: true),
+            "override survives the run finishing"
+        )
+
+        // A new turn drops every override.
+        promoted.reset()
+        TestRun.expect(promoted.isExpanded([done, running], isLast: true), "reset restores the default")
+    }
 
     private static func tempFile(_ contents: String) -> String {
         let url = FileManager.default.temporaryDirectory

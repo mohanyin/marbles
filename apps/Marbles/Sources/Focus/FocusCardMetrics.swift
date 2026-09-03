@@ -85,21 +85,28 @@ enum FocusCardMetrics {
 
     // MARK: - Transcript
 
-    /// A run is expanded when it is the newest and still working; everything else collapses to
-    /// a single "Ran N commands" row (PRD §5.1).
-    static func runIsExpanded(_ run: TranscriptRun, isLast: Bool) -> Bool {
+    /// Defaults to no overrides, which is the PRD rule: newest and still working is open.
+    static func runIsExpanded(
+        _ run: TranscriptRun,
+        isLast: Bool,
+        expansion: TranscriptExpansion = TranscriptExpansion()
+    ) -> Bool {
         guard case .tools(let calls) = run else { return false }
-        return isLast && calls.contains { $0.status == .running }
+        return expansion.isExpanded(calls, isLast: isLast)
     }
 
-    static func runHeight(_ run: TranscriptRun, isLast: Bool) -> CGFloat {
+    static func runHeight(
+        _ run: TranscriptRun,
+        isLast: Bool,
+        expansion: TranscriptExpansion = TranscriptExpansion()
+    ) -> CGFloat {
         switch run {
         case .prose(let text):
             return proseHeight(text, width: responseTextWidth)
         case .thinking:
             return thinkingRowHeight
         case .tools(let calls):
-            guard runIsExpanded(run, isLast: isLast) else { return toolRowHeight }
+            guard runIsExpanded(run, isLast: isLast, expansion: expansion) else { return toolRowHeight }
             let n = CGFloat(calls.count)
             return n * toolRowHeight + max(n - 1, 0) * toolRowSpacing
         }
@@ -152,7 +159,11 @@ enum FocusCardMetrics {
     }
 
     /// Height the transcript wants before clamping.
-    static func transcriptContentHeight(_ turn: TranscriptTurn, fallback: String) -> CGFloat {
+    static func transcriptContentHeight(
+        _ turn: TranscriptTurn,
+        fallback: String,
+        expansion: TranscriptExpansion = TranscriptExpansion()
+    ) -> CGFloat {
         let runs = turn.runs
         guard !runs.isEmpty else {
             return textHeight(fallback, font: bodyFont, width: responseTextWidth)
@@ -160,17 +171,25 @@ enum FocusCardMetrics {
         var height: CGFloat = 0
         for (index, run) in runs.enumerated() {
             if index > 0 { height += runSpacing }
-            height += runHeight(run, isLast: index == runs.count - 1)
+            height += runHeight(run, isLast: index == runs.count - 1, expansion: expansion)
         }
         return height
     }
 
-    static func transcriptHeight(_ turn: TranscriptTurn, fallback: String) -> CGFloat {
-        min(transcriptContentHeight(turn, fallback: fallback), maxTranscriptHeight)
+    static func transcriptHeight(
+        _ turn: TranscriptTurn,
+        fallback: String,
+        expansion: TranscriptExpansion = TranscriptExpansion()
+    ) -> CGFloat {
+        min(transcriptContentHeight(turn, fallback: fallback, expansion: expansion), maxTranscriptHeight)
     }
 
-    static func transcriptOverflows(_ turn: TranscriptTurn, fallback: String) -> Bool {
-        transcriptContentHeight(turn, fallback: fallback) > maxTranscriptHeight
+    static func transcriptOverflows(
+        _ turn: TranscriptTurn,
+        fallback: String,
+        expansion: TranscriptExpansion = TranscriptExpansion()
+    ) -> Bool {
+        transcriptContentHeight(turn, fallback: fallback, expansion: expansion) > maxTranscriptHeight
     }
 
     static func responseHeight(_ response: String) -> CGFloat {
@@ -182,12 +201,18 @@ enum FocusCardMetrics {
     ///
     /// The diameter is reserved, not the overhang: half the marble sits above the body, and the
     /// other half covers the body's top — content has to clear both.
-    static func size(title: String?, prompt: String?, turn: TranscriptTurn, fallback: String) -> CGSize {
+    static func size(
+        title: String?,
+        prompt: String?,
+        turn: TranscriptTurn,
+        fallback: String,
+        expansion: TranscriptExpansion = TranscriptExpansion()
+    ) -> CGSize {
         var height = marbleDiameter + padding
         if !(title?.isEmpty ?? true) { height += titleHeight + gap + ruleHeight }
         let promptH = promptHeight(prompt)
         if promptH > 0 { height += gap + promptH }
-        let transcript = transcriptHeight(turn, fallback: fallback)
+        let transcript = transcriptHeight(turn, fallback: fallback, expansion: expansion)
         if transcript > 0 { height += gap + transcript }
         height += padding
         return CGSize(width: width, height: ceil(height))

@@ -26,6 +26,10 @@ final class FocusCardView: NSView {
     private var followsNewest = true
     private var lastTurn = TranscriptTurn.empty
     private var lastFallback = ""
+    private var expansion = TranscriptExpansion()
+    private var lastPrompt: String?
+    /// Raised when a click changes the card's height; the overlay owns layout, so it relayouts.
+    var onRequestResize: (() -> Void)?
 
     /// `apply` runs before `layout`, and `pin(text:to:)` re-flows the text container afterwards,
     /// which can leave a scroll region parked mid-content. Reset once the frames are final.
@@ -84,6 +88,14 @@ final class FocusCardView: NSView {
         )
         transcriptScroll.contentView.postsBoundsChangedNotifications = true
 
+        transcript.onToggleRun = { [weak self] calls, isLast in
+            guard let self else { return }
+            self.expansion.toggle(calls, isLast: isLast)
+            self.transcript.apply(turn: self.lastTurn, fallback: self.lastFallback, expansion: self.expansion)
+            self.needsLayout = true
+            self.onRequestResize?()
+        }
+
         // Added last so the overhanging half is never covered by the body.
         addSubview(marble)
 
@@ -111,14 +123,30 @@ final class FocusCardView: NSView {
         promptBox.isHidden = promptText.isEmpty
 
         let fallback = FocusPreview.line(for: agent)
+        // A new question clears every manual expansion — those run ids are gone.
+        if agent.turn.prompt != lastPrompt {
+            lastPrompt = agent.turn.prompt
+            expansion.reset()
+        }
         if agent.turn != lastTurn || fallback != lastFallback {
             lastTurn = agent.turn
             lastFallback = fallback
-            transcript.apply(turn: agent.turn, fallback: fallback)
+            transcript.apply(turn: agent.turn, fallback: fallback, expansion: expansion)
         }
         transcriptScroll.isHidden = agent.turn.runs.isEmpty && fallback.isEmpty
 
         needsLayout = true
+    }
+
+    /// The card owns its expansion state, so it also owns its measured size.
+    func desiredSize(for agent: Agent) -> CGSize {
+        FocusCardMetrics.size(
+            title: FocusPreview.title(for: agent),
+            prompt: FocusPreview.prompt(for: agent),
+            turn: agent.turn,
+            fallback: FocusPreview.line(for: agent),
+            expansion: agent.turn.prompt == lastPrompt ? expansion : TranscriptExpansion()
+        )
     }
 
     func tickMotion(agent: Agent, now: Date, reducedMotion: Bool) {
@@ -178,12 +206,12 @@ final class FocusCardView: NSView {
         }
 
         if !transcriptScroll.isHidden {
-            let height = metrics.transcriptHeight(lastTurn, fallback: lastFallback)
+            let height = metrics.transcriptHeight(lastTurn, fallback: lastFallback, expansion: expansion)
             y += metrics.gap
             transcriptScroll.frame = NSRect(x: pad, y: y, width: width, height: height)
             setScroller(
                 transcriptScroll,
-                enabled: metrics.transcriptOverflows(lastTurn, fallback: lastFallback)
+                enabled: metrics.transcriptOverflows(lastTurn, fallback: lastFallback, expansion: expansion)
             )
             if followsNewest { scrollToBottom(transcriptScroll) }
         }
@@ -249,7 +277,7 @@ final class FocusCardView: NSView {
             prompt.textColor = CardPalette.promptText
         }
         // Row colours are baked in at build time, so rebuild them on an appearance change.
-        transcript.apply(turn: lastTurn, fallback: lastFallback)
+        transcript.apply(turn: lastTurn, fallback: lastFallback, expansion: expansion)
     }
 
     private func configure(scroll: NSScrollView, text: NSTextView, color: NSColor) {
