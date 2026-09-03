@@ -103,6 +103,8 @@ final class TranscriptView: FlippedView {
             let view: NSView
             if case .code(_, let lines) = block {
                 view = codeBlock(lines)
+            } else if case .table(let table) = block {
+                view = TableBlockView(table: table, style: style)
             } else {
                 view = attributedView(MarkdownRenderer.attributed(block, style: style), width: width)
             }
@@ -464,6 +466,102 @@ final class ChevronView: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             guard let image = TranscriptView.symbolImage("chevron.right", color: tint) else { return }
             arrow.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+    }
+}
+
+/// A markdown table. Columns take their natural width and the whole grid scrolls sideways, the
+/// same bargain fenced code makes — at 322pt of text width, fitting real tables in place would
+/// mean wrapping every description column to a couple of characters.
+private final class TableBlockView: NSView {
+    private let scroll = NSScrollView()
+    private let grid: NSView
+    private let table: MarkdownTable
+    private let style: MarkdownRenderer.Style
+    private let geometry: FocusCardMetrics.TableLayout
+
+    init(table: MarkdownTable, style: MarkdownRenderer.Style) {
+        self.table = table
+        self.style = style
+        self.geometry = FocusCardMetrics.tableLayout(table, style: style)
+        self.grid = FlippedView(frame: NSRect(x: 0, y: 0, width: geometry.width, height: geometry.height))
+        super.init(frame: .zero)
+
+        scroll.hasVerticalScroller = false
+        scroll.hasHorizontalScroller = false
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.documentView = grid
+        addSubview(scroll)
+        build()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        scroll.frame = bounds
+        scroll.hasHorizontalScroller = geometry.width > scroll.contentSize.width
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        build()
+    }
+
+    private func build() {
+        grid.subviews.forEach { $0.removeFromSuperview() }
+        grid.setFrameSize(NSSize(width: geometry.width, height: geometry.height))
+
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            var y: CGFloat = 0
+            if geometry.showsHeader {
+                addRow(table.header, y: y, header: true)
+                y += geometry.rowHeight
+
+                let rule = NSView(frame: NSRect(
+                    x: 0,
+                    y: y,
+                    width: geometry.width,
+                    height: FocusCardMetrics.tableRuleHeight
+                ))
+                rule.wantsLayer = true
+                rule.layer?.backgroundColor = CardPalette.hairline.cgColor
+                grid.addSubview(rule)
+                y += FocusCardMetrics.tableRuleHeight
+            }
+
+            for row in table.rows {
+                addRow(row, y: y, header: false)
+                y += geometry.rowHeight
+            }
+        }
+    }
+
+    private func addRow(_ cells: [String], y: CGFloat, header: Bool) {
+        var x: CGFloat = 0
+        for (column, source) in cells.enumerated() where column < geometry.columnWidths.count {
+            let width = geometry.columnWidths[column]
+            x += FocusCardMetrics.tableCellPadding
+            let field = MarkdownRenderer.cellField(
+                source,
+                style: style,
+                header: header,
+                alignment: FocusCardMetrics.cellAlignment(table.alignments, column: column)
+            )
+            field.isSelectable = true
+            field.frame = NSRect(
+                x: x,
+                y: y + FocusCardMetrics.tableRowPadding,
+                width: width,
+                height: geometry.rowHeight - FocusCardMetrics.tableRowPadding * 2
+            )
+            grid.addSubview(field)
+            x += width + FocusCardMetrics.tableCellPadding
         }
     }
 }

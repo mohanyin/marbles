@@ -8,6 +8,9 @@ enum MarkdownTests {
         parsesFencedCode()
         unterminatedFenceStillRenders()
         unsupportedSyntaxStaysText()
+        parsesTables()
+        tableEdgeCases()
+        measuresTableColumns()
         inlineEmphasisChangesFont()
         inlineCodeUsesMonospace()
         measuresBlocksIndependently()
@@ -77,13 +80,108 @@ enum MarkdownTests {
 
     /// Unsupported syntax must survive as the text the agent wrote, not vanish.
     private static func unsupportedSyntaxStaysText() {
-        let table = "| a | b |\n| --- | --- |"
-        let blocks = MarkdownParser.blocks(table)
-        TestRun.expectEqual(blocks.count, 1, "table is one paragraph")
-        TestRun.expectEqual(blocks.first, .paragraph(table), "table text preserved verbatim")
-
         let quote = MarkdownParser.blocks("> quoted").first
         TestRun.expectEqual(quote, .paragraph("> quoted"), "blockquote falls back to text")
+    }
+
+    private static func parsesTables() {
+        let source = """
+        | Commit | What |
+        | --- | :---: |
+        | 1a38623 | Read the turn |
+        | d923f45 | Render it |
+        """
+        let blocks = MarkdownParser.blocks(source)
+        TestRun.expectEqual(blocks.count, 1, "the whole table is one block")
+        guard case .table(let table)? = blocks.first else {
+            TestRun.expect(false, "parsed as a table")
+            return
+        }
+        TestRun.expectEqual(table.header, ["Commit", "What"], "header cells")
+        TestRun.expectEqual(table.rows.count, 2, "two body rows")
+        TestRun.expectEqual(table.rows.first ?? [], ["1a38623", "Read the turn"], "first row")
+        TestRun.expectEqual(table.alignments, [.leading, .center], "alignment from the delimiter")
+
+        // Prose either side survives.
+        let mixed = MarkdownParser.blocks("before\n\n" + source + "\n\nafter")
+        TestRun.expectEqual(mixed.count, 3, "paragraph, table, paragraph")
+        if case .paragraph(let last)? = mixed.last {
+            TestRun.expectEqual(last, "after", "text after the table is its own block")
+        }
+    }
+
+    private static func tableEdgeCases() {
+        // Pipes with no delimiter row are prose, not a table.
+        let notTable = "| a | b |\nplain text"
+        if case .paragraph? = MarkdownParser.blocks(notTable).first {} else {
+            TestRun.expect(false, "no delimiter row means no table")
+        }
+
+        // Ragged rows are normalised to the header's column count.
+        let ragged = MarkdownParser.blocks("| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 |")
+        guard case .table(let t)? = ragged.first else {
+            TestRun.expect(false, "ragged rows still parse")
+            return
+        }
+        TestRun.expectEqual(t.rows[0], ["1", "", ""], "short row padded")
+        TestRun.expectEqual(t.rows[1], ["1", "2", "3"], "long row trimmed")
+
+        // Pipes inside code spans and escaped pipes do not split cells.
+        TestRun.expectEqual(
+            MarkdownParser.cells("| `a|b` | c |"),
+            ["`a|b`", "c"],
+            "pipe inside a code span is literal"
+        )
+        TestRun.expectEqual(
+            MarkdownParser.cells(#"| a\|b | c |"#),
+            [#"a\|b"#, "c"],
+            "escaped pipe is literal"
+        )
+
+        // An empty header row is legal — it is how a headerless table is written.
+        guard case .table(let bare)? = MarkdownParser.blocks("| | |\n|---|---|\n| x | y |").first else {
+            TestRun.expect(false, "empty header parses")
+            return
+        }
+        TestRun.expectEqual(bare.header, ["", ""], "two empty header cells")
+        TestRun.expectEqual(bare.rows.first ?? [], ["x", "y"], "body row intact")
+    }
+
+    private static func measuresTableColumns() {
+        let source = "| Commit | What |\n|---|---|\n| 1a38623 | Read the current turn |"
+        guard case .table(let table)? = MarkdownParser.blocks(source).first else {
+            TestRun.expect(false, "table parsed")
+            return
+        }
+        let geometry = FocusCardMetrics.tableLayout(table, style: style)
+        TestRun.expectEqual(geometry.columnWidths.count, 2, "one width per column")
+        TestRun.expect(
+            geometry.columnWidths[1] > geometry.columnWidths[0],
+            "the wider column measures wider"
+        )
+        TestRun.expect(geometry.rowHeight > 0, "rows have height")
+        TestRun.expect(geometry.showsHeader, "a named header is drawn")
+        TestRun.expectNear(
+            geometry.height,
+            geometry.rowHeight * 2 + FocusCardMetrics.tableRuleHeight,
+            "height is header plus rule plus one row"
+        )
+
+        // A table written with an empty header row draws no header and reserves no space for it.
+        guard case .table(let bare)? = MarkdownParser.blocks("| | |\n|---|---|\n| x | y |").first else {
+            TestRun.expect(false, "headerless table parsed")
+            return
+        }
+        let bareGeometry = FocusCardMetrics.tableLayout(bare, style: style)
+        TestRun.expect(!bareGeometry.showsHeader, "empty header is not drawn")
+        TestRun.expectNear(bareGeometry.height, bareGeometry.rowHeight, "one row, no header, no rule")
+        // Scrolls rather than wrapping, so width must not affect the block's height.
+        let block = MarkdownBlock.table(table)
+        TestRun.expectNear(
+            FocusCardMetrics.blockHeight(block, style: style, width: 100),
+            FocusCardMetrics.blockHeight(block, style: style, width: 320),
+            "table height is width-independent"
+        )
     }
 
     // MARK: - Inline rendering

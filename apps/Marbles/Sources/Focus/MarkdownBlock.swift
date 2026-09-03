@@ -9,6 +9,25 @@ enum MarkdownBlock: Equatable {
     case numbered(marker: String, text: String)
     /// Verbatim lines. Never wrapped — a fenced block scrolls sideways instead (PRD §5.1).
     case code(language: String?, lines: [String])
+    case table(MarkdownTable)
+}
+
+/// A GitHub-flavoured table. Cells hold inline markdown source, resolved at render time like
+/// every other block.
+struct MarkdownTable: Equatable {
+    enum Alignment: Equatable {
+        case leading
+        case center
+        case trailing
+    }
+
+    var header: [String]
+    var alignments: [Alignment]
+    /// Every row is padded or trimmed to the header's column count, so layout never has to
+    /// reason about ragged input.
+    var rows: [[String]]
+
+    var columnCount: Int { header.count }
 }
 
 /// Block-level markdown, line by line.
@@ -29,8 +48,11 @@ enum MarkdownParser {
             paragraph = []
         }
 
-        for rawLine in source.components(separatedBy: .newlines) {
-            let line = rawLine
+        let lines = source.components(separatedBy: .newlines)
+        var index = 0
+        while index < lines.count {
+            defer { index += 1 }
+            let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if let fence = fenceLanguage(trimmed) {
@@ -69,6 +91,14 @@ enum MarkdownParser {
                 blocks.append(numbered)
                 continue
             }
+            // A table is a row followed by a delimiter row; without the delimiter it is prose
+            // that merely contains pipes.
+            if let table = table(at: index, in: lines) {
+                flushParagraph()
+                blocks.append(.table(table.value))
+                index = table.lastIndex
+                continue
+            }
             paragraph.append(line)
         }
 
@@ -78,6 +108,95 @@ enum MarkdownParser {
         }
         flushParagraph()
         return blocks
+    }
+
+    // MARK: - Tables
+
+    private static func table(at start: Int, in lines: [String]) -> (value: MarkdownTable, lastIndex: Int)? {
+        guard start + 1 < lines.count else { return nil }
+        let headerLine = lines[start].trimmingCharacters(in: .whitespaces)
+        guard headerLine.contains("|") else { return nil }
+        let header = cells(headerLine)
+        guard !header.isEmpty else { return nil }
+
+        let delimiter = cells(lines[start + 1].trimmingCharacters(in: .whitespaces))
+        guard delimiter.count == header.count, isDelimiterRow(delimiter) else { return nil }
+
+        var rows: [[String]] = []
+        var index = start + 2
+        while index < lines.count {
+            let line = lines[index].trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, line.contains("|") else { break }
+            var row = cells(line)
+            // Ragged rows are common in hand-written tables; normalise here so layout never sees them.
+            if row.count < header.count {
+                row.append(contentsOf: Array(repeating: "", count: header.count - row.count))
+            } else if row.count > header.count {
+                row = Array(row.prefix(header.count))
+            }
+            rows.append(row)
+            index += 1
+        }
+
+        let table = MarkdownTable(
+            header: header,
+            alignments: delimiter.map(alignment(of:)),
+            rows: rows
+        )
+        return (table, index - 1)
+    }
+
+    private static func isDelimiterRow(_ cells: [String]) -> Bool {
+        guard !cells.isEmpty else { return false }
+        return cells.allSatisfy { cell in
+            var body = cell.trimmingCharacters(in: .whitespaces)
+            guard !body.isEmpty else { return false }
+            if body.hasPrefix(":") { body.removeFirst() }
+            if body.hasSuffix(":") { body.removeLast() }
+            return !body.isEmpty && body.allSatisfy { $0 == "-" }
+        }
+    }
+
+    private static func alignment(of delimiter: String) -> MarkdownTable.Alignment {
+        let body = delimiter.trimmingCharacters(in: .whitespaces)
+        let leading = body.hasPrefix(":")
+        let trailing = body.hasSuffix(":")
+        if leading && trailing { return .center }
+        if trailing { return .trailing }
+        return .leading
+    }
+
+    /// Split a row on its pipes. Pipes inside inline code spans and escaped pipes are literal.
+    static func cells(_ line: String) -> [String] {
+        var out: [String] = []
+        var current = ""
+        var inCode = false
+        var escaped = false
+        for character in line {
+            if escaped {
+                current.append(character)
+                escaped = false
+                continue
+            }
+            switch character {
+            case "\\":
+                escaped = true
+                current.append(character)
+            case "`":
+                inCode.toggle()
+                current.append(character)
+            case "|" where !inCode:
+                out.append(current)
+                current = ""
+            default:
+                current.append(character)
+            }
+        }
+        out.append(current)
+        // Surrounding pipes produce empty cells at each end; a bare `| |` header does not.
+        if line.hasPrefix("|"), !out.isEmpty { out.removeFirst() }
+        if line.hasSuffix("|"), !out.isEmpty { out.removeLast() }
+        return out.map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     // MARK: - Line classification

@@ -50,6 +50,11 @@ enum FocusCardMetrics {
     static let codeInset: CGFloat = 8
     static let codeCornerRadius: CGFloat = 6
 
+    /// Horizontal padding on each side of a table cell, and the gap between rows.
+    static let tableCellPadding: CGFloat = 8
+    static let tableRowPadding: CGFloat = 4
+    static let tableRuleHeight: CGFloat = 1
+
     static var monoFont: NSFont { .monospacedSystemFont(ofSize: bodyFont.pointSize - 1, weight: .regular) }
 
     /// Style used for every measurement here; the view must render with the same one or the
@@ -140,6 +145,10 @@ enum FocusCardMetrics {
         if case .code(_, let lines) = block {
             return codeHeight(lines)
         }
+        if case .table(let table) = block {
+            // Width-independent, like code: the table scrolls rather than wrapping.
+            return tableLayout(table, style: style).height
+        }
         return attributedHeight(MarkdownRenderer.attributed(block, style: style), width: width)
     }
 
@@ -162,6 +171,79 @@ enum FocusCardMetrics {
         storage.addLayoutManager(manager)
         manager.ensureLayout(for: container)
         return ceil(manager.usedRect(for: container).height)
+    }
+
+    /// Column widths and row heights for a table, computed once.
+    ///
+    /// Columns take their natural width and the table scrolls sideways rather than wrapping —
+    /// at 322pt of text width a real two-column table already runs ~95pt over. Because this is
+    /// a pure function of the cell text, the view and these metrics cannot disagree about
+    /// geometry the way hand-computed heights have before.
+    struct TableLayout: Equatable {
+        var columnWidths: [CGFloat]
+        var rowHeight: CGFloat
+        /// A table written with an empty header row has no header to draw.
+        var showsHeader: Bool
+        var width: CGFloat
+        var height: CGFloat
+    }
+
+    static func cellAlignment(_ alignments: [MarkdownTable.Alignment], column: Int) -> NSTextAlignment {
+        guard column < alignments.count else { return .left }
+        switch alignments[column] {
+        case .leading: return .left
+        case .center: return .center
+        case .trailing: return .right
+        }
+    }
+
+    static func tableLayout(_ table: MarkdownTable, style: MarkdownRenderer.Style) -> TableLayout {
+        let columns = table.columnCount
+        guard columns > 0 else {
+            return TableLayout(columnWidths: [], rowHeight: 0, showsHeader: false, width: 0, height: 0)
+        }
+        let showsHeader = table.header.contains { !$0.isEmpty }
+
+        var widths = [CGFloat](repeating: 0, count: columns)
+        var rowHeight: CGFloat = 0
+
+        // Measured through the exact field the view draws with, alignment included — see
+        // `MarkdownRenderer.cellField`.
+        func measure(_ source: String, column: Int, header: Bool) {
+            let field = MarkdownRenderer.cellField(
+                source,
+                style: style,
+                header: header,
+                alignment: cellAlignment(table.alignments, column: column)
+            )
+            let size = field.fittingSize
+            widths[column] = max(widths[column], ceil(size.width))
+            rowHeight = max(rowHeight, ceil(size.height))
+        }
+
+        if showsHeader {
+            for (column, source) in table.header.enumerated() {
+                measure(source, column: column, header: true)
+            }
+        }
+        for row in table.rows {
+            for (column, source) in row.enumerated() where column < columns {
+                measure(source, column: column, header: false)
+            }
+        }
+
+        rowHeight += tableRowPadding * 2
+        let width = widths.reduce(0, +) + CGFloat(columns) * tableCellPadding * 2
+        let headerRows = showsHeader ? 1 : 0
+        let height = rowHeight * CGFloat(table.rows.count + headerRows)
+            + (showsHeader ? tableRuleHeight : 0)
+        return TableLayout(
+            columnWidths: widths,
+            rowHeight: rowHeight,
+            showsHeader: showsHeader,
+            width: width,
+            height: height
+        )
     }
 
     /// Height the transcript wants before clamping.

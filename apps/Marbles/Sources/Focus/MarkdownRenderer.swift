@@ -35,9 +35,36 @@ enum MarkdownRenderer {
             return listItem(marker: "•", source: source, style: style)
         case .numbered(let marker, let text):
             return listItem(marker: marker, source: text, style: style)
-        case .code:
+        case .code, .table:
             return NSAttributedString()
         }
+    }
+
+    /// Attributed text for one table cell. The header is semibold; body cells match prose.
+    static func cell(_ source: String, style: Style, header: Bool) -> NSAttributedString {
+        let font = header
+            ? NSFont.systemFont(ofSize: style.body.pointSize, weight: .semibold)
+            : style.body
+        return inline(source, font: font, style: style, paragraph: nil)
+    }
+
+    /// The one place a table cell's field is configured.
+    ///
+    /// Measurement and drawing both go through here. Configuring a field two ways and measuring
+    /// only one of them is how the last four geometry bugs happened — `lineBreakMode` and
+    /// `alignment` alone add 4pt to a field's required width, which clipped the final character
+    /// of every centred column.
+    static func cellField(
+        _ source: String,
+        style: Style,
+        header: Bool,
+        alignment: NSTextAlignment
+    ) -> NSTextField {
+        let field = NSTextField(labelWithAttributedString: cell(source, style: style, header: header))
+        field.maximumNumberOfLines = 1
+        field.lineBreakMode = .byClipping
+        field.alignment = alignment
+        return field
     }
 
     static func headingFont(level: Int, base: NSFont) -> NSFont {
