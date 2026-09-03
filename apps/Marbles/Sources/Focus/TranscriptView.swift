@@ -298,7 +298,7 @@ final class TranscriptView: FlippedView {
 /// A fenced code block: rounded background, monospaced, and scrolling sideways rather than
 /// wrapping — wrapped code is unreadable, and the card is only 360pt wide.
 final class CodeBlockView: NSView {
-    private let scroll = NSScrollView()
+    private let scroll = HorizontalScrollView()
     private let text = NSTextView()
 
     init(lines: [String]) {
@@ -307,7 +307,6 @@ final class CodeBlockView: NSView {
         layer?.cornerRadius = FocusCardMetrics.codeCornerRadius
         layer?.masksToBounds = true
 
-        scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
@@ -474,7 +473,7 @@ final class ChevronView: NSView {
 /// same bargain fenced code makes — at 322pt of text width, fitting real tables in place would
 /// mean wrapping every description column to a couple of characters.
 private final class TableBlockView: NSView {
-    private let scroll = NSScrollView()
+    private let scroll = HorizontalScrollView()
     private let grid: NSView
     private let table: MarkdownTable
     private let style: MarkdownRenderer.Style
@@ -487,7 +486,6 @@ private final class TableBlockView: NSView {
         self.grid = FlippedView(frame: NSRect(x: 0, y: 0, width: geometry.width, height: geometry.height))
         super.init(frame: .zero)
 
-        scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
         scroll.borderType = .noBorder

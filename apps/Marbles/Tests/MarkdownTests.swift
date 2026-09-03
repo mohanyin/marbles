@@ -11,6 +11,7 @@ enum MarkdownTests {
         parsesTables()
         tableEdgeCases()
         measuresTableColumns()
+        verticalScrollingGoesToTheTranscript()
         inlineEmphasisChangesFont()
         inlineCodeUsesMonospace()
         measuresBlocksIndependently()
@@ -82,6 +83,27 @@ enum MarkdownTests {
     private static func unsupportedSyntaxStaysText() {
         let quote = MarkdownParser.blocks("> quoted").first
         TestRun.expectEqual(quote, .paragraph("> quoted"), "blockquote falls back to text")
+    }
+
+    /// Code blocks and tables are exactly as tall as their content, so a vertical scroll over one
+    /// must reach the transcript underneath instead of dying in a scroll view with nowhere to go.
+    private static func verticalScrollingGoesToTheTranscript() {
+        TestRun.expect(
+            HorizontalScrollView.isVertical(deltaX: 0, deltaY: -8),
+            "a straight vertical scroll goes to the transcript"
+        )
+        TestRun.expect(
+            HorizontalScrollView.isVertical(deltaX: 2, deltaY: -18),
+            "a mostly-vertical flick still goes to the transcript"
+        )
+        TestRun.expect(
+            !HorizontalScrollView.isVertical(deltaX: -20, deltaY: 3),
+            "a mostly-horizontal flick scrolls the block"
+        )
+        TestRun.expect(
+            !HorizontalScrollView.isVertical(deltaX: 6, deltaY: 6),
+            "an exact diagonal stays with the block"
+        )
     }
 
     private static func parsesTables() {

@@ -29,6 +29,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Chips/Chips.swift" \
   "$SRC/Focus/FocusPreview.swift" \
   "$SRC/Focus/FocusCardMetrics.swift" \
+  "$SRC/Focus/HorizontalScrollView.swift" \
   "$SRC/Focus/MarkdownBlock.swift" \
   "$SRC/Focus/MarkdownRenderer.swift" \
   "$SRC/Focus/TranscriptTurn.swift" \
