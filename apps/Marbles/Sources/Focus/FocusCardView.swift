@@ -91,7 +91,13 @@ final class FocusCardView: NSView {
         transcript.onToggleRun = { [weak self] calls, isLast in
             guard let self else { return }
             self.expansion.toggle(calls, isLast: isLast)
-            self.transcript.apply(turn: self.lastTurn, fallback: self.lastFallback, expansion: self.expansion)
+            // Name the clicked run so its chevron turns instead of snapping to the new state.
+            self.transcript.apply(
+                turn: self.lastTurn,
+                fallback: self.lastFallback,
+                expansion: self.expansion,
+                animatingKey: TranscriptExpansion.key(calls)
+            )
             self.needsLayout = true
             self.onRequestResize?()
         }

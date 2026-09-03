@@ -38,6 +38,11 @@ enum FocusCardMetrics {
     static let toolRowSpacing: CGFloat = 6
     static let toolRowHeight: CGFloat = 18
     static let thinkingRowHeight: CGFloat = 18
+    /// The "Ran N commands" row stays put when a run is open — it is the only way to close it.
+    static var toolHeaderHeight: CGFloat { toolRowHeight }
+    /// Leading icon on thinking rows and the chevron on tool headers.
+    static let rowIconSize: CGFloat = 12
+    static let rowIconGap: CGFloat = 5
 
     /// Gap between markdown blocks inside one prose run.
     static let blockSpacing: CGFloat = 6
@@ -107,8 +112,9 @@ enum FocusCardMetrics {
             return thinkingRowHeight
         case .tools(let calls):
             guard runIsExpanded(run, isLast: isLast, expansion: expansion) else { return toolRowHeight }
+            // Header, then one row per call.
             let n = CGFloat(calls.count)
-            return n * toolRowHeight + max(n - 1, 0) * toolRowSpacing
+            return toolHeaderHeight + toolRowSpacing + n * toolRowHeight + max(n - 1, 0) * toolRowSpacing
         }
     }
 

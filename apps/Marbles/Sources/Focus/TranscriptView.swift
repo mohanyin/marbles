@@ -12,7 +12,13 @@ final class TranscriptView: FlippedView {
     var onToggleRun: (([TranscriptToolCall], Bool) -> Void)?
 
     /// Rebuild for `turn`. `fallback` is the status word shown before any step lands (PRD §5.2).
-    func apply(turn: TranscriptTurn, fallback: String, expansion: TranscriptExpansion) {
+    /// `animatingKey` is the run the reader just clicked; its chevron turns rather than snapping.
+    func apply(
+        turn: TranscriptTurn,
+        fallback: String,
+        expansion: TranscriptExpansion,
+        animatingKey: String? = nil
+    ) {
         runViews.forEach { $0.removeFromSuperview() }
         runViews = []
 
@@ -33,7 +39,13 @@ final class TranscriptView: FlippedView {
                 let isLast = index == runs.count - 1
                 let height = metrics.runHeight(run, isLast: isLast, expansion: expansion)
                 let expanded = metrics.runIsExpanded(run, isLast: isLast, expansion: expansion)
-                let view = makeView(for: run, expanded: expanded, isLast: isLast, width: width)
+                let view = makeView(
+                    for: run,
+                    expanded: expanded,
+                    isLast: isLast,
+                    width: width,
+                    animatingKey: animatingKey
+                )
                 view.frame = NSRect(x: 0, y: y, width: width, height: height)
                 add(view)
                 y += height
@@ -56,17 +68,23 @@ final class TranscriptView: FlippedView {
         for run: TranscriptRun,
         expanded: Bool,
         isLast: Bool,
-        width: CGFloat
+        width: CGFloat,
+        animatingKey: String?
     ) -> NSView {
         switch run {
         case .prose(let text):
             return Self.proseStack(text, width: width)
         case .thinking:
-            return Self.labelRow("Thinking…", color: CardPalette.ink.withAlphaComponent(0.45))
+            return Self.labelRow(
+                "Thinking…",
+                color: CardPalette.ink.withAlphaComponent(0.45),
+                symbol: "brain"
+            )
         case .tools(let calls):
-            let body = expanded ? Self.toolStack(calls, width: width) : Self.collapsedRow(calls)
-            // Only multi-call runs are worth a click; a single call already shows everything.
-            guard calls.count > 1 else { return body }
+            // A single call already shows everything, so it needs no header or chevron.
+            guard calls.count > 1 else { return Self.collapsedRow(calls) }
+            let animates = animatingKey != nil && animatingKey == TranscriptExpansion.key(calls)
+            let body = Self.runBody(calls, expanded: expanded, width: width, animates: animates)
             return ToggleRunView(content: body) { [weak self] in
                 self?.onToggleRun?(calls, isLast)
             }
@@ -148,41 +166,113 @@ final class TranscriptView: FlippedView {
     }
 
     private static func collapsedRow(_ calls: [TranscriptToolCall]) -> NSView {
-        let failed = calls.contains { $0.status == .failed }
-        let running = calls.contains { $0.status == .running }
-        let text: String
-        if calls.count == 1 {
-            text = calls[0].label
-        } else if running {
-            text = "Running \(calls.count) commands…"
-        } else {
-            text = "Ran \(calls.count) commands"
+        guard let only = calls.first, calls.count == 1 else {
+            return labelRow(summaryText(calls), color: summaryColor(calls))
         }
-        return labelRow(
-            text,
-            color: failed ? errorColor : CardPalette.ink.withAlphaComponent(0.7)
-        )
+        return labelRow(only.label, color: color(for: only.status))
     }
 
-    private static func toolStack(_ calls: [TranscriptToolCall], width: CGFloat) -> NSView {
+    /// Header row plus, when open, one row per call. The header is always present so there is
+    /// something to click to close an expanded run.
+    private static func runBody(
+        _ calls: [TranscriptToolCall],
+        expanded: Bool,
+        width: CGFloat,
+        animates: Bool
+    ) -> NSView {
         let container = FlippedView()
-        var y: CGFloat = 0
-        for call in calls {
-            let row = labelRow(call.label, color: color(for: call.status))
-            row.frame = NSRect(x: 0, y: y, width: width, height: FocusCardMetrics.toolRowHeight)
-            container.addSubview(row)
-            y += FocusCardMetrics.toolRowHeight + FocusCardMetrics.toolRowSpacing
+        let metrics = FocusCardMetrics.self
+
+        let header = FlippedView()
+        header.frame = NSRect(x: 0, y: 0, width: width, height: metrics.toolHeaderHeight)
+        let chevron = ChevronView(frame: NSRect(
+            x: 0,
+            y: (metrics.toolHeaderHeight - metrics.rowIconSize) / 2,
+            width: metrics.rowIconSize,
+            height: metrics.rowIconSize
+        ))
+        chevron.tint = summaryColor(calls)
+        chevron.setOpen(expanded, animated: animates)
+        header.addSubview(chevron)
+
+        let label = labelRow(summaryText(calls), color: summaryColor(calls))
+        let inset = metrics.rowIconSize + metrics.rowIconGap
+        label.frame = NSRect(x: inset, y: 0, width: width - inset, height: metrics.toolHeaderHeight)
+        header.addSubview(label)
+        container.addSubview(header)
+
+        var y = metrics.toolHeaderHeight
+        if expanded {
+            y += metrics.toolRowSpacing
+            for call in calls {
+                let row = labelRow(call.label, color: color(for: call.status))
+                row.frame = NSRect(x: inset, y: y, width: width - inset, height: metrics.toolRowHeight)
+                container.addSubview(row)
+                y += metrics.toolRowHeight + metrics.toolRowSpacing
+            }
+            y -= metrics.toolRowSpacing
         }
+        container.setFrameSize(NSSize(width: width, height: y))
         return container
     }
 
-    private static func labelRow(_ text: String, color: NSColor) -> NSTextField {
+    private static func summaryText(_ calls: [TranscriptToolCall]) -> String {
+        if calls.contains(where: { $0.status == .running }) {
+            return "Running \(calls.count) commands…"
+        }
+        return "Ran \(calls.count) commands"
+    }
+
+    private static func summaryColor(_ calls: [TranscriptToolCall]) -> NSColor {
+        calls.contains { $0.status == .failed }
+            ? errorColor
+            : CardPalette.ink.withAlphaComponent(0.7)
+    }
+
+    private static func labelRow(
+        _ text: String,
+        color: NSColor,
+        symbol: String? = nil
+    ) -> NSTextField {
         let field = NSTextField(labelWithString: text)
         field.font = FocusCardMetrics.bodyFont
         field.lineBreakMode = .byTruncatingTail
         field.maximumNumberOfLines = 1
-        applyDrawing(to: field) { field.textColor = color }
+        applyDrawing(to: field) {
+            field.textColor = color
+            guard let symbol, let image = symbolImage(symbol, color: color) else { return }
+            // An attachment keeps the row one view, so it still measures as one line.
+            let out = NSMutableAttributedString()
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            let size = FocusCardMetrics.rowIconSize
+            attachment.bounds = NSRect(
+                x: 0,
+                y: FocusCardMetrics.bodyFont.descender + 1,
+                width: size,
+                height: size
+            )
+            out.append(NSAttributedString(attachment: attachment))
+            out.append(NSAttributedString(
+                string: "  " + text,
+                attributes: [.font: FocusCardMetrics.bodyFont, .foregroundColor: color]
+            ))
+            field.attributedStringValue = out
+        }
         return field
+    }
+
+    /// Tinted SF Symbol at the row icon size, or nil when the symbol is unavailable — callers
+    /// fall back to text alone rather than showing a blank.
+    static func symbolImage(_ name: String, color: NSColor) -> NSImage? {
+        guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil) else {
+            return nil
+        }
+        let config = NSImage.SymbolConfiguration(
+            pointSize: FocusCardMetrics.rowIconSize,
+            weight: .medium
+        ).applying(.init(paletteColors: [color]))
+        return base.withSymbolConfiguration(config)
     }
 
     private static func color(for status: TranscriptToolCall.Status) -> NSColor {
@@ -306,5 +396,74 @@ private final class ToggleRunView: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+/// Disclosure chevron that turns between pointing right (closed) and down (open).
+///
+/// Layer-hosting with a sublayer we position ourselves: rotating a layer-backed `NSView` means
+/// fighting AppKit over `anchorPoint`, since it rewrites the layer's geometry on every layout.
+final class ChevronView: NSView {
+    private let arrow = CALayer()
+    private(set) var isOpen = false
+
+    var tint: NSColor = .labelColor {
+        didSet { updateImage() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer = CALayer()
+        arrow.contentsGravity = .resizeAspect
+        arrow.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        layer?.addSublayer(arrow)
+        updateImage()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        arrow.bounds = CGRect(origin: .zero, size: bounds.size)
+        arrow.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateImage()
+    }
+
+    func setOpen(_ open: Bool, animated: Bool) {
+        isOpen = open
+        // Views are rebuilt on every refresh, so an un-animated set must not inherit the
+        // implicit animation CALayer would otherwise give it.
+        let transform = CATransform3DMakeRotation(open ? -.pi / 2 : 0, 0, 0, 1)
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(0.18)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+            // Start from the closed/open opposite so the turn is visible on a fresh view.
+            arrow.transform = CATransform3DMakeRotation(open ? 0 : -.pi / 2, 0, 0, 1)
+            arrow.transform = transform
+        } else {
+            CATransaction.setDisableActions(true)
+            arrow.transform = transform
+        }
+        CATransaction.commit()
+    }
+
+    private func updateImage() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            guard let image = TranscriptView.symbolImage("chevron.right", color: tint) else { return }
+            arrow.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
     }
 }

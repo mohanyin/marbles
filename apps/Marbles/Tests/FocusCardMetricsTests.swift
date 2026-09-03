@@ -129,10 +129,19 @@ enum FocusCardMetricsTests {
             FocusCardMetrics.runIsExpanded(.tools([done, running]), isLast: true),
             "the newest run expands while it is still working"
         )
+        // Expanded keeps its "Ran N commands" header — it is the only way to close the run.
         TestRun.expectNear(
             FocusCardMetrics.runHeight(.tools([done, running]), isLast: true),
-            FocusCardMetrics.toolRowHeight * 2 + FocusCardMetrics.toolRowSpacing,
-            "expanded run is one row per call"
+            FocusCardMetrics.toolHeaderHeight
+                + FocusCardMetrics.toolRowSpacing
+                + FocusCardMetrics.toolRowHeight * 2
+                + FocusCardMetrics.toolRowSpacing,
+            "expanded run is a header plus one row per call"
+        )
+        TestRun.expect(
+            FocusCardMetrics.runHeight(.tools([done, running]), isLast: true)
+                > FocusCardMetrics.runHeight(.tools([done, running]), isLast: false),
+            "expanding a run makes it taller than its collapsed header"
         )
 
         // Spacing between runs is counted once per gap, not once per run.
