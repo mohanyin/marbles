@@ -17,6 +17,8 @@ struct HookEvent: Equatable {
     var isBackgroundAgent: Bool?
     var stopStatus: String?
     var sourceHint: Source?
+    /// Attached by `marbles-hook`; absent from raw Claude / Cursor payloads and fixtures.
+    var terminal: TerminalContext? = nil
     var parseError: Bool
 }
 

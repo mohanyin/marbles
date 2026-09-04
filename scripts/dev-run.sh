@@ -38,6 +38,8 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
   <true/>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Marbles receives local status from Claude Code hooks on this Mac.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Marbles brings the terminal tab running a session to the front when you click its marble.</string>
 </dict>
 </plist>
 PLIST
@@ -61,6 +63,7 @@ xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
   -framework Security \
   -o "$OUT/Contents/Helpers/marbles-hook" \
   "$SRC/Agents/IngestConstants.swift" \
+  "$SRC/Agents/TerminalContext.swift" \
   "$SRC/Ingest/IngestAuth.swift" \
   "$ROOT/tools/marbles-hook/main.swift"
 

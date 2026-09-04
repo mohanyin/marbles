@@ -144,6 +144,7 @@ Each module has one owner. Cross-module calls go through the types in §8.
 | **Chips** | 3-light matrix from status / current tool | Session identity |
 | **Focus** | Preview card, sizing metrics, adaptive palette | Hook install |
 | **Hooks** | Idempotent merge into `~/.claude/settings.json` | Network except localhost (n/a) |
+| **JumpIn** | Click → bring the session's terminal tab, pane, or app forward (AppleScript, tmux/kitty/WezTerm CLIs) | Know hook JSON; touch layout |
 | **Persistence** | Snap, seeds, prefs, launch-at-login | |
 | **Demo** | Synthetic agent on first launch only, after a 2h discovery miss | Survive after a real session appears; reappear on later empty launches |
 
@@ -488,7 +489,7 @@ Unix socket is a fine v1.1 swap; keep the JSON body identical. The token still a
 
 1. Read stdin to EOF (Claude or Cursor JSON).
 2. Read `ingest.json` for `url` and `token` (every invocation).
-3. POST body = stdin bytes, headers `Content-Type: application/json`, `X-Marbles-Hook: 1`, `X-Marbles-Token: <token>`.
+3. POST body = stdin bytes plus a `marbles_client` object (controlling tty, parent-pid chain up to the launchd child, `TERM_PROGRAM`, tmux / kitty / WezTerm ids) so jump-in can find the tab, headers `Content-Type: application/json`, `X-Marbles-Hook: 1`, `X-Marbles-Token: <token>`.
 4. Exit 0 in all cases (including malformed stdin — still exit 0, optionally POST a `{ "parseError": true }`). Never print the token.
 
 Never print to stdout (Claude may attach it on some events; Cursor may treat stdout as a hook response and loop). Log to `~/Library/Logs/Marbles/hook.log` only if `MARBLES_HOOK_DEBUG=1`.
@@ -537,7 +538,7 @@ No `failClosed`. No Tab hooks. No `workspaceOpen`. Cursor watches this file and 
 
 ### 11.4 Normalized event
 
-Ingest decodes Claude stdin with `JSONDecoder.keyDecodingStrategy = .convertFromSnakeCase` (helper POSTs **raw** stdin; the app owns mapping). Unknown fields ignored. Fixtures: `Tests/Fixtures/hooks/*.json`.
+Ingest decodes Claude stdin with `JSONDecoder.keyDecodingStrategy = .convertFromSnakeCase` (helper POSTs stdin with only `marbles_client` added; the app owns mapping). Unknown fields ignored. Fixtures: `Tests/Fixtures/hooks/*.json`.
 
 | Claude stdin | `HookEvent` | Notes |
 | --- | --- | --- |
@@ -617,11 +618,17 @@ Dedup: same `session_id` or same (cwd + pid). PID reuse: if `pid` start time (or
 
 ## 12. Focus card
 
-Focus is a read-only popover. There is no composer, no keystroke injection, and **no jump-in** —
-`claude://claude.ai/chat/<id>` only resolves sessions the desktop app itself created, so it is a
-guaranteed miss for terminal-invoked CLI sessions, and scripting a terminal to run
-`claude --resume` was not worth the Apple Events surface. The `JumpIn` module, the automation
-entitlement, and `NSAppleEventsUsageDescription` were all removed.
+Focus is a read-only popover. There is no composer and no keystroke injection.
+
+**Jump-in is a click on the marble**, not a button on the card. An earlier attempt went through
+`claude://claude.ai/chat/<id>` (only resolves sessions the desktop app created — a guaranteed
+miss for CLI sessions) and scripting `claude --resume` into a fresh terminal; both were removed.
+The current design never resumes anything: `marbles-hook` runs inside the session's process
+tree, so it reports the controlling tty and the app at the top of the tree (`marbles_client`,
+§11.2), and the `JumpIn` module brings that exact surface forward — Ghostty via its AppleScript
+dictionary (cwd match, Claude's tab title as tiebreaker), Terminal.app and iTerm2 by tty, tmux /
+kitty / WezTerm through their CLIs, anything else by activating the app. This needs
+`NSAppleEventsUsageDescription`; macOS prompts once per host app on first use.
 
 ### 12.1 Anatomy
 
