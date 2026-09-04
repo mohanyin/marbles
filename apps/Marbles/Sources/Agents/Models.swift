@@ -37,6 +37,8 @@ struct Agent: Identifiable, Equatable {
     var id: AgentID
     var cwd: URL?
     var pid: Int32?
+    /// Where the session's process runs; nil until a hook from inside it arrives.
+    var terminal: TerminalContext?
     var source: Source
     var conductorWorkspaceID: String?
     var status: AgentStatus
@@ -85,6 +87,7 @@ struct Agent: Identifiable, Equatable {
             id: id,
             cwd: cwd,
             pid: nil,
+            terminal: nil,
             source: source,
             conductorWorkspaceID: conductorWorkspaceID,
             status: status,

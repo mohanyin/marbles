@@ -94,7 +94,7 @@ enum Hooks {
             cursorHooks: hooks.cursor,
             claudeCodeDetected: appExists("com.anthropic.claude-code") || binaryExists("claude"),
             cursorDetected: appExists("com.todesktop.230313mzl4w4u92") || appExists("com.cursor"),
-            conductorDetected: appExists("build.conductor.desktop")
+            conductorDetected: appExists(HostBundle.conductor) || appExists(HostBundle.conductorLegacy)
         )
     }
 

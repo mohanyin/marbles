@@ -45,4 +45,18 @@ brew install --cask --no-quarantine Casks/marbles.rb
 ./scripts/dev-run.sh
 ```
 
-Debug builds rewrite hook commands to the built helper. Focus jump-in opens Claude Code, Cursor, Terminal, or Conductor.
+Debug builds rewrite hook commands to the built helper.
+
+## Jump in
+
+Click a marble to go to its session. The hook helper runs inside the session's process tree, so it reports the terminal that owns it; Marbles then brings the exact tab forward:
+
+| Host | How the tab is found |
+| --- | --- |
+| Ghostty | AppleScript dictionary: terminal matching the session cwd, with Claude's tab title breaking ties |
+| Terminal.app, iTerm2 | AppleScript: tab / session whose `tty` matches |
+| kitty, WezTerm | `kitten @ focus-window` (needs `allow_remote_control`), `wezterm cli activate-pane` |
+| tmux | `select-window` / `select-pane` first, then the terminal hosting the attached client |
+| Cursor, Conductor, Claude app, VS Code, anything else | The app is activated |
+
+macOS asks once per host app for Automation permission ("Marbles wants to control Ghostty"). Sessions that predate the hooks fall back to opening Terminal in the session directory.

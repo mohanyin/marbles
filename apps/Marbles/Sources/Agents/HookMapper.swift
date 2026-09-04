@@ -40,6 +40,7 @@ enum HookMapper {
             isBackgroundAgent: bool(obj, "is_background_agent", "isBackgroundAgent"),
             stopStatus: string(obj, "status", "stopStatus"),
             sourceHint: cursor ? .cursor : sourceHint(obj),
+            terminal: TerminalContext(jsonObject: obj[TerminalContext.payloadKey]),
             parseError: false
         )
     }

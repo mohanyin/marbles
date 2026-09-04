@@ -267,6 +267,7 @@ final class AgentStore {
             if let cwd = event.cwd { agents[index].cwd = URL(fileURLWithPath: cwd) }
             if let hint = event.sourceHint { agents[index].source = hint }
             if let path = event.transcriptPath { agents[index].transcriptPath = path }
+            adoptTerminal(from: event, at: index)
             refreshFromTranscript(event.sessionID)
             pendingStarts.removeValue(forKey: event.sessionID)
             return
@@ -326,7 +327,16 @@ final class AgentStore {
         }
         guard let index = agents.firstIndex(where: { $0.id == event.sessionID }) else { return }
         if let path = event.transcriptPath { agents[index].transcriptPath = path }
+        adoptTerminal(from: event, at: index)
         body(&agents[index])
+    }
+
+    /// Every hook fires from inside the session's process tree, so any event can refresh where
+    /// the session lives (`claude --resume` in a new tab keeps the session id but moves).
+    private func adoptTerminal(from event: HookEvent, at index: Int) {
+        guard let terminal = event.terminal else { return }
+        agents[index].terminal = terminal
+        if let pid = terminal.agentPID { agents[index].pid = pid }
     }
 
     private func insertAgent(from event: HookEvent, title: String?) {
@@ -340,6 +350,8 @@ final class AgentStore {
             transcriptPath: event.transcriptPath,
             seed: seeds.seed(for: event.sessionID)
         )
+        agent.terminal = event.terminal
+        agent.pid = event.terminal?.agentPID
         if agent.transcriptPath == nil {
             agent.transcriptPath = TranscriptPeek.resolvedPath(
                 sessionID: event.sessionID,

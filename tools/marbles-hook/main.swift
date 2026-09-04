@@ -20,9 +20,20 @@ func debugLog(_ message: String) {
     }
 }
 
+/// The hook runs inside the session's process tree, so it is the one place that can see which
+/// terminal tab the agent lives in. Attach that under `marbles_client`; the app owns the rest of
+/// the mapping. A body that isn't a JSON object is posted untouched.
+func enriched(_ body: Data) -> Data {
+    guard var object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return body }
+    object[TerminalContext.payloadKey] = TerminalContext.capture().jsonObject()
+    return (try? JSONSerialization.data(withJSONObject: object)) ?? body
+}
+
 var body = FileHandle.standardInput.readDataToEndOfFile()
 if body.isEmpty || (try? JSONSerialization.jsonObject(with: body)) == nil {
     body = Data(#"{"parseError":true}"#.utf8)
+} else {
+    body = enriched(body)
 }
 
 let target = IngestConstants.loadPublishedTarget()

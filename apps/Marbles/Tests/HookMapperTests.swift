@@ -6,6 +6,25 @@ enum HookMapperTests {
         toolSummaryRules()
         missingSessionDrops()
         cursorStopError()
+        readsTerminalContext()
+    }
+
+    private static func readsTerminalContext() {
+        let data = Data(#"""
+        {"hook_event_name":"PreToolUse","session_id":"s1","cwd":"/repo","tool_name":"Read",
+         "marbles_client":{"tty":"/dev/ttys004","terminal_pid":752,
+           "terminal_path":"/Applications/Ghostty.app/Contents/MacOS/ghostty",
+           "ancestors":[{"pid":6855,"name":"claude"},{"pid":752,"name":"ghostty"}],
+           "term_program":"ghostty"}}
+        """#.utf8)
+        let event = HookMapper.event(from: data)
+        TestRun.expectEqual(event?.terminal?.tty, "/dev/ttys004")
+        TestRun.expectEqual(event?.terminal?.terminalPID, 752)
+        TestRun.expectEqual(event?.terminal?.agentPID, 6855)
+        TestRun.expectEqual(event?.terminal?.ancestors.count, 2)
+
+        let plain = HookMapper.event(from: Data(#"{"hook_event_name":"Stop","session_id":"s1"}"#.utf8))
+        TestRun.expect(plain?.terminal == nil, "raw payloads carry no terminal context")
     }
 
     private static func decodeRepoFixtures() {

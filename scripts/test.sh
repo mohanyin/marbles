@@ -18,6 +18,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Agents/FixtureFiles.swift" \
   "$SRC/Identity/Identity.swift" \
   "$SRC/Agents/IngestConstants.swift" \
+  "$SRC/Agents/TerminalContext.swift" \
   "$SRC/Agents/HookEvent.swift" \
   "$SRC/Agents/HookMapper.swift" \
   "$SRC/Agents/TranscriptPeek.swift" \
@@ -41,6 +42,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Mode/ModeController.swift" \
   "$SRC/Layout/SnapGeometry.swift" \
   "$SRC/Layout/LayoutEngine.swift" \
+  "$SRC/JumpIn/SessionJump.swift" \
   "$TESTS/TestSupport.swift" \
   "$TESTS/LayoutTests.swift" \
   "$TESTS/ModeTests.swift" \
@@ -55,6 +57,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$TESTS/MarkdownTests.swift" \
   "$TESTS/HooksMergeTests.swift" \
   "$TESTS/DemoTests.swift" \
+  "$TESTS/SessionJumpTests.swift" \
   "$TESTS/main.swift"
 
 "$OUT"
@@ -64,6 +67,7 @@ xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
   -framework Security \
   -o "$HELPER" \
   "$SRC/Agents/IngestConstants.swift" \
+  "$SRC/Agents/TerminalContext.swift" \
   "$SRC/Ingest/IngestAuth.swift" \
   "$ROOT/tools/marbles-hook/main.swift"
 

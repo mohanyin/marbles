@@ -45,6 +45,32 @@ enum TranscriptPeek {
         return TranscriptSnapshot(hasConversation: hasUser || title != nil, title: title)
     }
 
+    /// Claude Code's auto-generated conversation title — the same text it writes into the
+    /// terminal tab title, so jump-in can pick the right tab among several in one directory.
+    /// Newest wins; the tail is scanned first because the title is regenerated as the session goes.
+    static func latestAITitle(path: String?) -> String? {
+        if let tail = tailData(path: path), let title = latestAITitle(data: tail) {
+            return title
+        }
+        guard let path, !path.isEmpty, let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        return latestAITitle(data: handle.readData(ofLength: headLimit))
+    }
+
+    static func latestAITitle(data: Data) -> String? {
+        var latest: String?
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        text.enumerateLines { line, _ in
+            guard line.contains("ai-title"),
+                  let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  obj["type"] as? String == "ai-title",
+                  let value = string(obj["aiTitle"] ?? obj["title"])
+            else { return }
+            latest = value
+        }
+        return latest
+    }
+
     /// Latest visible assistant reply (text blocks only — not thinking).
     static func latestAssistantText(path: String?) -> String? {
         tailData(path: path).flatMap(latestAssistantText(data:))

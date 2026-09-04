@@ -507,6 +507,10 @@ final class OverlayController {
         switch drag.hit {
         case .marble(let id):
             mode.clickMarble(id)
+            // Jump into the session: bring its terminal tab, IDE, or app forward.
+            if let agent = store.agent(id: id) {
+                SessionJumpRunner.shared.jump(to: agent)
+            }
         case .dock:
             if drag.wasFocused { mode.clickOutside() }
         case .card, .none:

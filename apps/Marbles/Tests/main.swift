@@ -17,6 +17,7 @@ struct MarblesTestRunner {
         MarkdownTests.run()
         HooksMergeTests.run()
         DemoTests.run()
+        SessionJumpTests.run()
         if TestRun.failures > 0 {
             print("\(TestRun.failures) test(s) failed")
             exit(1)
