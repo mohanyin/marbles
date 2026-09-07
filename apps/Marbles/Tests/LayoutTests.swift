@@ -42,7 +42,7 @@ enum LayoutTests {
     }
 
     private static func paddingAndStride() {
-        TestRun.expectNear(LayoutEngine.itemStride, 55, "36 + 4 + 3 + 12")
+        TestRun.expectNear(LayoutEngine.itemStride, 56, "36 + 4 + 4 + 12")
         let roster = agents(count: 2)
         let layout = dockLayout(roster)
         guard let a = layout.frames[roster[0].id], let b = layout.frames[roster[1].id] else {

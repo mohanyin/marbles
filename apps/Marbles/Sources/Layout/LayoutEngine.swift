@@ -24,7 +24,9 @@ enum LayoutEngine {
     static let padding: CGFloat = 10
     /// Marble → 3-light row.
     static let indicatorGap: CGFloat = 4
-    static let indicatorSize: CGFloat = 3
+    /// Same light `Indicators.lightSize` draws. Derived so the space the layout
+    /// reserves cannot drift from the size actually rendered.
+    static let indicatorSize: CGFloat = Indicators.lightSize
     /// Indicator row → next marble.
     static let itemGap: CGFloat = 12
     static let maxVisible = 9

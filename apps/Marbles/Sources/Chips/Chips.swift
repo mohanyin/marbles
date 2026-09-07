@@ -9,8 +9,8 @@ enum LightColor: Equatable {
 }
 
 enum Indicators {
-    static let lightSize: CGFloat = 3
-    static let lightGap: CGFloat = 1
+    static let lightSize: CGFloat = 4
+    static let lightGap: CGFloat = 2
     static let cornerRadius: CGFloat = 0.5
     static let glowBlur: CGFloat = 4
     static let waveStep: TimeInterval = 0.64

@@ -3,6 +3,15 @@ using namespace metal;
 
 constant float PI = 3.141592653589793;
 
+// Spherical shading. Direction is normalize(-0.45, 0.55, 0.70): from the upper
+// left, matching the light the rest of the platform's chrome implies.
+constant float3 kLightDir = float3(-0.451129, 0.551379, 0.701755);
+constant float kShadeAmbient = 0.34;
+constant float kRimStrength = 0.5;
+constant float kRimPower = 3.0;
+// Radius of the disc in uv, set by the `edge` falloff below.
+constant float kDiscRadius = 0.4975;
+
 struct Instance {
     float2 center;
     float radius;
@@ -123,6 +132,28 @@ fragment float4 marble_fragment(
     float3 backColor = m.colorBack.rgb * m.colorBack.a;
     color += backColor * (1.0 - opacity);
     opacity += m.colorBack.a * (1.0 - opacity);
+
+    // The disc is already a circle in uv, so treat it as a sphere: lift a normal
+    // off it, darken with a lambert multiply, and add a fresnel rim. No extra
+    // geometry and no change to the instance struct.
+    //
+    // The rim is the only additive term, and it is not optional decoration: a
+    // multiply can never brighten, so without something adding light the
+    // silhouette fades into the background instead of catching an edge. Gating
+    // it by lambert keeps the glow a crescent on the lit side rather than a ring
+    // all the way round.
+    {
+        float2 sphereUV = (uv - 0.5) / kDiscRadius;
+        float radial = min(dot(sphereUV, sphereUV), 1.0);
+        float height = sqrt(max(1.0 - radial, 0.0));
+        // uv.y grows downward here, so flip it to make +y point up.
+        float3 normal = float3(sphereUV.x, -sphereUV.y, height);
+        float lambert = max(dot(normal, kLightDir), 0.0);
+        float shade = mix(kShadeAmbient, 1.0, lambert * lambert);
+        float rim = pow(1.0 - height, kRimPower) * kRimStrength * lambert;
+        // rgb only; alpha is left alone so the premultiplied edge stays intact.
+        color = color * shade + rim;
+    }
 
     color *= imgAlpha;
     opacity *= imgAlpha;
