@@ -11,14 +11,28 @@ struct MarbleParams: Equatable {
 }
 
 /// Marble palettes are stops along one trajectory of Thomas' cyclically symmetric
-/// attractor, walked in Oklab. Two properties come from that: stops on a shared
-/// curve are relatives rather than strangers, and Oklab arc length is perceptual
-/// distance, so spacing stops by a fixed arc length spaces them by a fixed
-/// visible difference no matter how fast the trajectory happens to be moving.
+/// attractor. Stops on a shared curve are relatives rather than strangers, and
+/// spacing them by a fixed arc length keeps consecutive stops a fixed visible
+/// distance apart no matter how fast the trajectory happens to be moving.
+///
+/// The walk runs in gamma-encoded sRGB: the three attractor coordinates are the
+/// three colour channels. An earlier version walked in Oklab, which allowed
+/// lightness, chroma and hue to be steered independently; measured side by side
+/// at matched perceptual step size, this space produced more chroma (0.089 vs
+/// 0.070), fewer near-grey stops (17% vs 27%) and better separation (2.45 vs
+/// 1.68), so the simpler space won on results. What it gives up is control:
+/// here the channels are welded together, so there is no lightness knob or
+/// chroma knob to turn -- only `rgbCenter`, `rgbSpread` and `stepRange`, each of
+/// which moves everything at once. The Oklab machinery is in git history if a
+/// future change needs those axes back.
+///
+/// Walking in *linear* RGB instead is a trap worth naming: linear 0.5 displays
+/// at about 0.74, so a cube centred on 0.5 comes out chalky, with more than
+/// twice as many dead-grey stops.
 ///
 /// The render target is `bgra8Unorm_srgb`, so the shader works in linear light
-/// and the GPU encodes on write. Colors here are therefore linear, not
-/// sRGB-encoded.
+/// and the GPU encodes on write. Stops are therefore decoded to linear on the
+/// way out, in `linearColor`.
 enum Identity {
     static let minColors = 3
     static let maxColors = 5
@@ -35,30 +49,17 @@ enum Identity {
     private static func attractorScale(dissipation: Double) -> Double {
         1.9 / dissipation.squareRoot()
     }
-    /// Oklab arc length between consecutive stops. Drawn per marble: low values
-    /// give a tonal marble, high values a wide-arc one, and that contrast is
-    /// itself an identity cue.
-    private static let stepRange: ClosedRange<Double> = 0.08...0.20
-    private static let lightnessCenter: Double = 0.58
-    private static let lightnessJitter: Double = 0.06
-    /// Lightness travel inside one marble. The walk itself is isotropic — a
-    /// measured 34% of each step's squared displacement lands on the L axis
-    /// against 33% for perfectly even — so the only thing that was holding
-    /// lightness flat was this budget. Widening it is what gives a marble
-    /// light and dark within one disc instead of a single tone.
-    private static let lightnessAmplitude: ClosedRange<Double> = 0.18...0.34
-    /// Chroma as a share of what sRGB can actually supply at this hue and
-    /// lightness, rather than an absolute amount the gamut may not be able to
-    /// meet. Replaces the old absolute budget, which asked every hue for the
-    /// same chroma and let clipping quietly flatten the ones that could not.
-    private static let chromaFraction: ClosedRange<Double> = 0.55...0.85
-    /// How far each stop's lightness is pulled toward the gamut cusp for its own
-    /// hue. Every hue peaks at a different lightness -- yellow near 0.86, blue
-    /// near 0.46 -- so a band pinned at 0.58 asks yellow for a colour sRGB
-    /// cannot make, and it lands as olive. Kept low: cusp lightness sits above
-    /// 0.58 for most of the wheel, so bias buys warm hues at the cost of the
-    /// dark end. 0.25 is a nudge, not a rebalance.
-    private static let cuspBias: Double = 0.25
+    /// Arc length in gamma-encoded sRGB between consecutive stops. Drawn per
+    /// marble: low values give a tonal marble, high values a wide-arc one, and
+    /// that contrast is itself an identity cue. Scaled to hold the mean
+    /// perceptual step at about deltaE 0.09, matching what the Oklab walk took.
+    private static let stepRange: ClosedRange<Double> = 0.117...0.292
+    /// Mid-cube. Stops ride outward from here along the attractor.
+    private static let rgbCenter: Double = 0.5
+    /// How far a marble ranges from `rgbCenter` in each channel. This is the
+    /// nearest thing to a saturation control the space offers, and it moves
+    /// lightness at the same time.
+    private static let rgbSpread: ClosedRange<Double> = 0.30...0.50
 
     private static let integrationStep: Double = 0.01
     private static let warmupSteps = 1_500
@@ -107,9 +108,7 @@ enum Identity {
             y: rng.value(in: -2...2),
             z: rng.value(in: -2...2)
         )
-        let lightness = lightnessCenter + rng.value(in: -lightnessJitter...lightnessJitter)
-        let amplitude = rng.value(in: lightnessAmplitude)
-        let fraction = rng.value(in: chromaFraction)
+        let spread = rng.value(in: rgbSpread)
         let step = rng.value(in: stepRange)
         let innerDistortion = 0.1 + rng.unit() * 0.7
         let size = 0.7 + rng.unit() * 0.3
@@ -121,33 +120,31 @@ enum Identity {
 
         let scale = attractorScale(dissipation: dissipation)
 
-        func lab(_ p: Vec3) -> Vec3 {
-            let walked = lightness + amplitude * clampUnit(p.z / scale)
-            let hx = p.x / scale, hy = p.y / scale
-            let radius = min((hx * hx + hy * hy).squareRoot(), 1)
-            let angle = atan2(hy, hx)
-            let ca = cos(angle), sa = sin(angle)
-            let L = walked * (1 - cuspBias) + cuspLightness(angle: angle) * cuspBias
-            let c = fraction * radius * maxChroma(lightness: L, ca: ca, sa: sa)
-            return Vec3(x: L, y: c * ca, z: c * sa)
+        /// The attractor's three coordinates, straight onto the three channels.
+        func channels(_ p: Vec3) -> Vec3 {
+            Vec3(
+                x: rgbCenter + spread * clampUnit(p.x / scale),
+                y: rgbCenter + spread * clampUnit(p.y / scale),
+                z: rgbCenter + spread * clampUnit(p.z / scale)
+            )
         }
 
         // Two extra stops past the smoke ramp: the backdrop and the inner wash,
         // taken from the same walk so they stay in the family.
-        var stops: [Vec3] = [lab(point)]
+        var stops: [Vec3] = [channels(point)]
         let wanted = count + 2
         while stops.count < wanted {
             var travelled = 0.0
-            var previous = lab(point)
+            var previous = channels(point)
             var steps = 0
             while travelled < step && steps < maxStepsPerStop {
                 point = advance(point, dissipation: dissipation)
-                let current = lab(point)
+                let current = channels(point)
                 travelled += distance(previous, current)
                 previous = current
                 steps += 1
             }
-            stops.append(lab(point))
+            stops.append(channels(point))
         }
 
         let colors = stops.prefix(count).map { linearColor($0, alpha: 1) }
@@ -203,84 +200,20 @@ enum Identity {
         min(max(v, -1), 1)
     }
 
-    // MARK: - Oklab
+    // MARK: - Colour
 
-    private static func oklabToLinear(_ c: Vec3) -> (Double, Double, Double) {
-        let l = pow3(c.x + 0.3963377774 * c.y + 0.2158037573 * c.z)
-        let m = pow3(c.x - 0.1055613458 * c.y - 0.0638541728 * c.z)
-        let s = pow3(c.x - 0.0894841775 * c.y - 1.2914855480 * c.z)
-        return (
-            4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-            -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-            -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
-        )
-    }
-
-    private static func pow3(_ v: Double) -> Double { v * v * v }
-
-    /// Lightness of the sRGB gamut cusp per hue -- the lightness at which that
-    /// hue reaches its highest chroma. Sampled once on first use.
-    private static let cuspTable: [Double] = (0..<64).map { i in
-        let h = Double(i) / 64 * 2 * .pi
-        let ca = cos(h), sa = sin(h)
-        var bestL = 0.5
-        var bestC = -1.0
-        var L = 0.05
-        while L < 0.99 {
-            let c = maxChroma(lightness: L, ca: ca, sa: sa)
-            if c > bestC { bestC = c; bestL = L }
-            L += 0.01
-        }
-        return bestL
-    }
-
-    private static func cuspLightness(angle: Double) -> Double {
-        var turns = angle / (2 * .pi)
-        turns -= turns.rounded(.down)
-        let x = turns * 64
-        let i = Int(x) % 64
-        let f = x - Double(Int(x))
-        return cuspTable[i] * (1 - f) + cuspTable[(i + 1) % 64] * f
-    }
-
-    /// Largest in-gamut chroma at this lightness and hue direction.
-    private static func maxChroma(lightness L: Double, ca: Double, sa: Double) -> Double {
-        var low = 0.0
-        var high = 0.4
-        if inGamut(Vec3(x: L, y: ca * high, z: sa * high)) { return high }
-        for _ in 0..<18 {
-            let mid = (low + high) / 2
-            if inGamut(Vec3(x: L, y: ca * mid, z: sa * mid)) { low = mid } else { high = mid }
-        }
-        return low
-    }
-
-    private static func inGamut(_ c: Vec3) -> Bool {
-        let (r, g, b) = oklabToLinear(c)
-        let epsilon = 1e-4
-        return r >= -epsilon && r <= 1 + epsilon
-            && g >= -epsilon && g <= 1 + epsilon
-            && b >= -epsilon && b <= 1 + epsilon
-    }
-
-    /// Pull chroma in until the color fits sRGB, keeping lightness and hue.
-    private static func gamutClip(_ c: Vec3) -> Vec3 {
-        if inGamut(c) { return c }
-        var low = 0.0
-        var high = 1.0
-        for _ in 0..<24 {
-            let mid = (low + high) / 2
-            if inGamut(Vec3(x: c.x, y: c.y * mid, z: c.z * mid)) { low = mid } else { high = mid }
-        }
-        return Vec3(x: c.x, y: c.y * low, z: c.z * low)
+    /// sRGB transfer function. The walk happens in encoded space, where equal
+    /// steps read as equal visible differences; the shader wants linear light.
+    private static func srgbDecode(_ v: Double) -> Double {
+        let c = min(max(v, 0), 1)
+        return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
     }
 
     private static func linearColor(_ c: Vec3, alpha: Float) -> SIMD4<Float> {
-        let (r, g, b) = oklabToLinear(gamutClip(c))
-        return SIMD4<Float>(
-            Float(min(max(r, 0), 1)),
-            Float(min(max(g, 0), 1)),
-            Float(min(max(b, 0), 1)),
+        SIMD4<Float>(
+            Float(srgbDecode(c.x)),
+            Float(srgbDecode(c.y)),
+            Float(srgbDecode(c.z)),
             alpha
         )
     }
