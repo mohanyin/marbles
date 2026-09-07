@@ -9,15 +9,38 @@ enum LightColor: Equatable {
 }
 
 enum Indicators {
-    static let lightSize: CGFloat = 4
+    /// Across the row. Uniform, and the only dimension the dock layout reserves.
+    static let lightThickness: CGFloat = 4
+    /// Along the row. The middle light stays square; the outer two are longer,
+    /// which gives the row a direction instead of reading as three dots.
+    static let lightLength: CGFloat = 4
+    static let endLightLength: CGFloat = 6
     static let lightGap: CGFloat = 2
     static let cornerRadius: CGFloat = 0.5
+    static let endCornerRadius: CGFloat = 1
+
+    static func length(at index: Int) -> CGFloat {
+        index == 1 ? lightLength : endLightLength
+    }
+
+    static func cornerRadius(at index: Int) -> CGFloat {
+        index == 1 ? cornerRadius : endCornerRadius
+    }
+
+    /// Distance from the row's centre to this light's centre, along the row.
+    static func offsetAlongRow(at index: Int) -> CGFloat {
+        switch index {
+        case 0: return -(rowLength - endLightLength) / 2
+        case 2: return (rowLength - endLightLength) / 2
+        default: return 0
+        }
+    }
     static let glowBlur: CGFloat = 4
     static let waveStep: TimeInterval = 0.64
     static let flashOn: TimeInterval = 0.28
     static let flashPeriod: TimeInterval = 0.72
 
-    static var rowLength: CGFloat { lightSize * 3 + lightGap * 2 }
+    static var rowLength: CGFloat { endLightLength * 2 + lightLength + lightGap * 2 }
 
     static func lights(for agent: Agent, now: Date, reducedMotion: Bool) -> [LightColor] {
         if agent.currentTool != nil {
@@ -40,15 +63,27 @@ enum Indicators {
     static func viewFrame(marble: MarbleFrame, orientation: LineOrientation) -> CGRect {
         let centers = centers(marble: marble, orientation: orientation)
         let pad = glowBlur
-        let minX = (centers.map(\.x).min() ?? 0) - lightSize / 2 - pad
-        let maxX = (centers.map(\.x).max() ?? 0) + lightSize / 2 + pad
-        let minY = (centers.map(\.y).min() ?? 0) - lightSize / 2 - pad
-        let maxY = (centers.map(\.y).max() ?? 0) + lightSize / 2 + pad
+        // The outermost centres belong to the end lights, so those set the
+        // extent along the row.
+        let halfX: CGFloat
+        let halfY: CGFloat
+        switch orientation.axis {
+        case .vertical:
+            halfX = endLightLength / 2
+            halfY = lightThickness / 2
+        case .horizontal:
+            halfX = lightThickness / 2
+            halfY = endLightLength / 2
+        }
+        let minX = (centers.map(\.x).min() ?? 0) - halfX - pad
+        let maxX = (centers.map(\.x).max() ?? 0) + halfX + pad
+        let minY = (centers.map(\.y).min() ?? 0) - halfY - pad
+        let maxY = (centers.map(\.y).max() ?? 0) + halfY + pad
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     static func centers(marble: MarbleFrame, orientation: LineOrientation) -> [CGPoint] {
-        let alongOffset = marble.size / 2 + LayoutEngine.indicatorGap + lightSize / 2
+        let alongOffset = marble.size / 2 + LayoutEngine.indicatorGap + lightThickness / 2
         let along: CGFloat
         switch orientation.axis {
         case .vertical:
@@ -60,13 +95,13 @@ enum Indicators {
                 ? marble.center.x + alongOffset
                 : marble.center.x - alongOffset
         }
-        let spread = lightSize + lightGap
         return (0..<3).map { index in
+            let offset = offsetAlongRow(at: index)
             switch orientation.axis {
             case .vertical:
-                return CGPoint(x: marble.center.x + CGFloat(index - 1) * spread, y: along)
+                return CGPoint(x: marble.center.x + offset, y: along)
             case .horizontal:
-                return CGPoint(x: along, y: marble.center.y + CGFloat(1 - index) * spread)
+                return CGPoint(x: along, y: marble.center.y - offset)
             }
         }
     }

@@ -25,28 +25,32 @@ final class IndicatorLightsView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let pad = Indicators.glowBlur
-        let size = Indicators.lightSize
+        let thickness = Indicators.lightThickness
         let gap = Indicators.lightGap
-        let spread = size + gap
+        // Lights differ in length, so walk the row rather than indexing a
+        // fixed stride.
+        var advance: CGFloat = 0
         for (index, light) in lights.prefix(3).enumerated() {
-            let offset = CGFloat(index) * spread
+            let length = Indicators.length(at: index)
+            let radius = Indicators.cornerRadius(at: index)
             let rect: NSRect
             if stackVertically {
                 rect = NSRect(
-                    x: bounds.midX - size / 2,
-                    y: bounds.maxY - pad - size - offset,
-                    width: size,
-                    height: size
+                    x: bounds.midX - thickness / 2,
+                    y: bounds.maxY - pad - advance - length,
+                    width: thickness,
+                    height: length
                 )
             } else {
                 rect = NSRect(
-                    x: bounds.minX + pad + offset,
-                    y: bounds.midY - size / 2,
-                    width: size,
-                    height: size
+                    x: bounds.minX + pad + advance,
+                    y: bounds.midY - thickness / 2,
+                    width: length,
+                    height: thickness
                 )
             }
-            let path = NSBezierPath(roundedRect: rect, xRadius: Indicators.cornerRadius, yRadius: Indicators.cornerRadius)
+            advance += length + gap
+            let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
             if light == .off {
                 NSColor(srgbRed: 0.7, green: 0.7, blue: 0.7, alpha: 0.3).setFill()
                 path.fill()
