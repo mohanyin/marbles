@@ -47,12 +47,18 @@ enum Identity {
     /// lightness flat was this budget. Widening it is what gives a marble
     /// light and dark within one disc instead of a single tone.
     private static let lightnessAmplitude: ClosedRange<Double> = 0.18...0.34
-    private static let chromaRange: ClosedRange<Double> = 0.07...0.15
-    /// Chroma scales separation superlinearly: pressing stops against the sRGB
-    /// boundary pins them together locally while pushing marbles apart globally.
-    /// Held well below the point where that effect peaks, to keep the palette
-    /// calm; separation is 1.25 here against 1.52 at 1.9.
-    private static let chromaScale: Double = 1.2
+    /// Chroma as a share of what sRGB can actually supply at this hue and
+    /// lightness, rather than an absolute amount the gamut may not be able to
+    /// meet. Replaces the old absolute budget, which asked every hue for the
+    /// same chroma and let clipping quietly flatten the ones that could not.
+    private static let chromaFraction: ClosedRange<Double> = 0.55...0.85
+    /// How far each stop's lightness is pulled toward the gamut cusp for its own
+    /// hue. Every hue peaks at a different lightness -- yellow near 0.86, blue
+    /// near 0.46 -- so a band pinned at 0.58 asks yellow for a colour sRGB
+    /// cannot make, and it lands as olive. Kept low: cusp lightness sits above
+    /// 0.58 for most of the wheel, so bias buys warm hues at the cost of the
+    /// dark end. 0.25 is a nudge, not a rebalance.
+    private static let cuspBias: Double = 0.25
 
     private static let integrationStep: Double = 0.01
     private static let warmupSteps = 1_500
@@ -103,7 +109,7 @@ enum Identity {
         )
         let lightness = lightnessCenter + rng.value(in: -lightnessJitter...lightnessJitter)
         let amplitude = rng.value(in: lightnessAmplitude)
-        let chroma = chromaScale * rng.value(in: chromaRange)
+        let fraction = rng.value(in: chromaFraction)
         let step = rng.value(in: stepRange)
         let innerDistortion = 0.1 + rng.unit() * 0.7
         let size = 0.7 + rng.unit() * 0.3
@@ -116,11 +122,14 @@ enum Identity {
         let scale = attractorScale(dissipation: dissipation)
 
         func lab(_ p: Vec3) -> Vec3 {
-            Vec3(
-                x: lightness + amplitude * clampUnit(p.z / scale),
-                y: chroma * clampUnit(p.x / scale),
-                z: chroma * clampUnit(p.y / scale)
-            )
+            let walked = lightness + amplitude * clampUnit(p.z / scale)
+            let hx = p.x / scale, hy = p.y / scale
+            let radius = min((hx * hx + hy * hy).squareRoot(), 1)
+            let angle = atan2(hy, hx)
+            let ca = cos(angle), sa = sin(angle)
+            let L = walked * (1 - cuspBias) + cuspLightness(angle: angle) * cuspBias
+            let c = fraction * radius * maxChroma(lightness: L, ca: ca, sa: sa)
+            return Vec3(x: L, y: c * ca, z: c * sa)
         }
 
         // Two extra stops past the smoke ramp: the backdrop and the inner wash,
@@ -208,6 +217,43 @@ enum Identity {
     }
 
     private static func pow3(_ v: Double) -> Double { v * v * v }
+
+    /// Lightness of the sRGB gamut cusp per hue -- the lightness at which that
+    /// hue reaches its highest chroma. Sampled once on first use.
+    private static let cuspTable: [Double] = (0..<64).map { i in
+        let h = Double(i) / 64 * 2 * .pi
+        let ca = cos(h), sa = sin(h)
+        var bestL = 0.5
+        var bestC = -1.0
+        var L = 0.05
+        while L < 0.99 {
+            let c = maxChroma(lightness: L, ca: ca, sa: sa)
+            if c > bestC { bestC = c; bestL = L }
+            L += 0.01
+        }
+        return bestL
+    }
+
+    private static func cuspLightness(angle: Double) -> Double {
+        var turns = angle / (2 * .pi)
+        turns -= turns.rounded(.down)
+        let x = turns * 64
+        let i = Int(x) % 64
+        let f = x - Double(Int(x))
+        return cuspTable[i] * (1 - f) + cuspTable[(i + 1) % 64] * f
+    }
+
+    /// Largest in-gamut chroma at this lightness and hue direction.
+    private static func maxChroma(lightness L: Double, ca: Double, sa: Double) -> Double {
+        var low = 0.0
+        var high = 0.4
+        if inGamut(Vec3(x: L, y: ca * high, z: sa * high)) { return high }
+        for _ in 0..<18 {
+            let mid = (low + high) / 2
+            if inGamut(Vec3(x: L, y: ca * mid, z: sa * mid)) { low = mid } else { high = mid }
+        }
+        return low
+    }
 
     private static func inGamut(_ c: Vec3) -> Bool {
         let (r, g, b) = oklabToLinear(c)
