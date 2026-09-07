@@ -27,19 +27,32 @@ enum Identity {
     /// reason Thomas is usable with a randomized parameter where most
     /// attractors need a stability search per seed.
     private static let dissipationRange: ClosedRange<Double> = 0.10...0.20
-    /// Rough bound on |x| for the attractor, used to land it in the unit cube.
-    private static let attractorScale: Double = 4.5
+    /// The attractor's extent depends on its dissipation: |max| runs from about
+    /// 6.0 at b = 0.10 down to 3.9 at b = 0.20, fitting 1.9 / sqrt(b) to within
+    /// ~10%. A single hardcoded scale mis-sized a range that varies 2.4x, so low
+    /// dissipation marbles spent stretches pinned against the clamp with their
+    /// colour flat. `clampUnit` stays as a guard for the fit's error margin.
+    private static func attractorScale(dissipation: Double) -> Double {
+        1.9 / dissipation.squareRoot()
+    }
     /// Oklab arc length between consecutive stops. Drawn per marble: low values
     /// give a tonal marble, high values a wide-arc one, and that contrast is
     /// itself an identity cue.
     private static let stepRange: ClosedRange<Double> = 0.08...0.20
     private static let lightnessCenter: Double = 0.58
     private static let lightnessJitter: Double = 0.06
-    private static let lightnessAmplitude: ClosedRange<Double> = 0.08...0.18
+    /// Lightness travel inside one marble. The walk itself is isotropic — a
+    /// measured 34% of each step's squared displacement lands on the L axis
+    /// against 33% for perfectly even — so the only thing that was holding
+    /// lightness flat was this budget. Widening it is what gives a marble
+    /// light and dark within one disc instead of a single tone.
+    private static let lightnessAmplitude: ClosedRange<Double> = 0.18...0.34
     private static let chromaRange: ClosedRange<Double> = 0.07...0.15
     /// Chroma scales separation superlinearly: pressing stops against the sRGB
     /// boundary pins them together locally while pushing marbles apart globally.
-    private static let chromaScale: Double = 1.9
+    /// Held well below the point where that effect peaks, to keep the palette
+    /// calm; separation is 1.25 here against 1.52 at 1.9.
+    private static let chromaScale: Double = 1.2
 
     private static let integrationStep: Double = 0.01
     private static let warmupSteps = 1_500
@@ -100,11 +113,13 @@ enum Identity {
             point = advance(point, dissipation: dissipation)
         }
 
+        let scale = attractorScale(dissipation: dissipation)
+
         func lab(_ p: Vec3) -> Vec3 {
             Vec3(
-                x: lightness + amplitude * clampUnit(p.z / attractorScale),
-                y: chroma * clampUnit(p.x / attractorScale),
-                z: chroma * clampUnit(p.y / attractorScale)
+                x: lightness + amplitude * clampUnit(p.z / scale),
+                y: chroma * clampUnit(p.x / scale),
+                z: chroma * clampUnit(p.y / scale)
             )
         }
 
