@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let prefs = PrefsStore.shared
         let store = AgentStore()
+        store.onCompletion = { _ in
+            if prefs.values.completionSound { CompletionSound.play() }
+        }
 
         let overlay = OverlayController(store: store)
         let ingest = IngestServer { data in
