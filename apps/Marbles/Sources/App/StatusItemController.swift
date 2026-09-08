@@ -5,6 +5,7 @@ final class StatusItemController {
     private let overlay: OverlayController
     private let prefs: PrefsStore
     private let statusItem: NSStatusItem
+    private let preferencesWindow = PreferencesWindow()
 
     init(overlay: OverlayController, prefs: PrefsStore = .shared) {
         self.overlay = overlay
@@ -165,8 +166,7 @@ final class StatusItemController {
     }
 
     @objc private func openPreferences() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        NSApp.activate(ignoringOtherApps: true)
+        preferencesWindow.show()
     }
 
     @objc private func installHooks() {

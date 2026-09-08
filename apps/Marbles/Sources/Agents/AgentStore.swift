@@ -4,6 +4,8 @@ import Foundation
 final class AgentStore {
     private(set) var agents: [Agent] = []
     var onChange: (() -> Void)?
+    /// Fires once per turn, when a live Stop lands on an agent that was not already finished.
+    var onCompletion: ((Agent) -> Void)?
 
     private let seeds: SeedStore
     private var lingerTimer: Timer?
@@ -305,16 +307,20 @@ final class AgentStore {
     }
 
     private func applyStop(_ event: HookEvent, error: Bool) {
+        var completed: Agent?
         mutate(event) { agent in
             clearTools(on: &agent, retireCurrent: true)
             agent.turnOpen = false
             if error {
                 applyTransition(from: agent.status, to: .error, on: &agent, forceBloom: false)
             } else if agent.status != .error {
+                let completesTurn = agent.status != .finished
                 applyTransition(from: agent.status, to: .finished, on: &agent, forceBloom: false)
+                if completesTurn { completed = agent }
             }
             agent.lastEventAt = Date()
         }
+        if let completed { onCompletion?(completed) }
         refreshFromTranscript(event.sessionID, fallback: event.lastAssistantMessage)
         schedulePreviewRetry(event.sessionID)
     }

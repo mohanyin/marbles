@@ -6,6 +6,7 @@ enum StatusTests {
         sessionLifecycle()
         toolFailureIsNotError()
         stopFailureIsError()
+        completionFiresOncePerTurn()
         parseErrorIsIgnored()
         cursorAskIsDropped()
         injectThenClearLeavesLive()
@@ -82,6 +83,24 @@ enum StatusTests {
         store.apply(event("StopFailure", session: "s3"))
         TestRun.expectEqual(store.agents[0].status, .error)
         TestRun.expectEqual(store.agents[0].turnOpen, false)
+    }
+
+    @MainActor
+    private static func completionFiresOncePerTurn() {
+        let store = makeStore()
+        var completions = 0
+        store.onCompletion = { _ in completions += 1 }
+        store.apply(event("UserPromptSubmit", session: "s4"))
+        store.apply(event("Stop", session: "s4"))
+        TestRun.expectEqual(completions, 1, "stop completes the turn")
+        store.apply(event("Notification", session: "s4", extra: ["notification_type": "agent_completed"]))
+        TestRun.expectEqual(completions, 1, "a second completion signal for the same turn is silent")
+        store.apply(event("UserPromptSubmit", session: "s4"))
+        store.apply(event("StopFailure", session: "s4"))
+        TestRun.expectEqual(completions, 1, "a failed turn is not a completion")
+        store.apply(event("UserPromptSubmit", session: "s4"))
+        store.apply(event("Stop", session: "s4"))
+        TestRun.expectEqual(completions, 2, "the next turn completes again")
     }
 
     @MainActor
