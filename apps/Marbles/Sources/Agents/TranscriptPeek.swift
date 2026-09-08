@@ -1,8 +1,17 @@
 import Foundation
 
 struct TranscriptSnapshot: Equatable {
+    /// Where the title came from, weakest first. A stronger source always replaces a weaker one;
+    /// within a source the newest record wins.
+    enum TitleSource: Int, Comparable {
+        case none, prompt, agentName, ai, custom
+
+        static func < (lhs: TitleSource, rhs: TitleSource) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
     var hasConversation: Bool
     var title: String?
+    var titleSource: TitleSource = .none
 
     static let empty = TranscriptSnapshot(hasConversation: false, title: nil)
 }
@@ -12,37 +21,58 @@ enum TranscriptPeek {
     private static let tailLimit = 256 * 1024
     private static let maxTitle = 80
 
+    /// Title preference: a `/rename` (`custom-title`) beats Claude Code's generated `ai-title`,
+    /// which beats a subagent name, which beats a summary squeezed out of the first prompt.
+    /// The head of the file carries the prompt; the generated title is written after the first
+    /// reply and regenerated as the session goes, so the tail is consulted for the newest one.
     static func inspect(path: String?) -> TranscriptSnapshot {
         guard let path, !path.isEmpty else { return .empty }
         guard let handle = FileHandle(forReadingAtPath: path) else { return .empty }
         defer { try? handle.close() }
-        let data = handle.readData(ofLength: headLimit)
-        return inspect(data: data)
+        var snapshot = inspect(data: handle.readData(ofLength: headLimit))
+        if snapshot.titleSource < .custom, let tail = tailData(handle: handle) {
+            let late = inspect(data: tail)
+            // A later prompt is not the first ask; anything stronger from the tail is newer.
+            if late.titleSource > .prompt, late.titleSource >= snapshot.titleSource {
+                snapshot.title = late.title
+                snapshot.titleSource = late.titleSource
+            }
+        }
+        return snapshot
     }
 
     static func inspect(data: Data) -> TranscriptSnapshot {
-        var title: String?
+        var snapshot = TranscriptSnapshot.empty
         var hasUser = false
         guard let text = String(data: data, encoding: .utf8) else { return .empty }
+        func offer(_ value: String, from source: TranscriptSnapshot.TitleSource) {
+            guard source >= snapshot.titleSource else { return }
+            snapshot.title = truncate(value)
+            snapshot.titleSource = source
+        }
         text.enumerateLines { line, _ in
             guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
                 return
             }
-            let type = obj["type"] as? String
-            if type == "custom-title", let value = string(obj["customTitle"] ?? obj["title"]) {
-                title = truncate(value)
-            }
-            if type == "agent-name", title == nil, let value = string(obj["agentName"]) {
-                title = truncate(value)
-            }
-            if type == "user" {
+            switch obj["type"] as? String {
+            case "custom-title":
+                if let value = string(obj["customTitle"] ?? obj["title"]) { offer(value, from: .custom) }
+            case "ai-title":
+                if let value = string(obj["aiTitle"] ?? obj["title"]) { offer(value, from: .ai) }
+            case "agent-name":
+                if let value = string(obj["agentName"]) { offer(value, from: .agentName) }
+            case "user":
                 hasUser = true
-                if title == nil, let value = userText(obj) {
-                    title = truncate(value)
+                if snapshot.titleSource == .none, let value = userText(obj),
+                   let summary = TitleSummary.make(from: value) {
+                    offer(summary, from: .prompt)
                 }
+            default:
+                break
             }
         }
-        return TranscriptSnapshot(hasConversation: hasUser || title != nil, title: title)
+        snapshot.hasConversation = hasUser || snapshot.title != nil
+        return snapshot
     }
 
     /// Claude Code's auto-generated conversation title — the same text it writes into the
@@ -104,6 +134,10 @@ enum TranscriptPeek {
         guard let path, !path.isEmpty else { return nil }
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
+        return tailData(handle: handle)
+    }
+
+    private static func tailData(handle: FileHandle) -> Data? {
         let size = handle.seekToEndOfFile()
         let start = size > UInt64(tailLimit) ? size - UInt64(tailLimit) : 0
         handle.seek(toFileOffset: start)
@@ -224,5 +258,94 @@ enum TranscriptPeek {
     private static func truncate(_ text: String) -> String {
         if text.count <= maxTitle { return text }
         return String(text.prefix(maxTitle - 1)) + "…"
+    }
+}
+
+/// Squeezes a card title out of the first prompt for sessions that have no generated title yet
+/// (the first seconds of a Claude Code session, or Cursor, which never writes one).
+enum TitleSummary {
+    static let maxLength = 60
+
+    private static let noise: [NSRegularExpression] = [
+        #"https?://\S+"#,
+        #"\[Image[^\]]*\]"#,
+        #"`[^`]*`"#,
+        #"@\S+"#,
+    ].map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+
+    /// Conversational lead-ins that carry no information about the task.
+    private static let leadIns: [NSRegularExpression] = [
+        #"^(hey|hi|hello|yo|ok|okay|so|also|now|please|pls|plz|thanks)[,!.\s]+"#,
+        #"^(can|could|would|will|do)\s+(you|u)\s+(please\s+|pls\s+)?"#,
+        #"^(please|pls|plz)\s+"#,
+        #"^(help me|i want you to|i need you to|i'd like you to|i would like you to|i want to|i need to|i'd like to|let's|lets)\s+"#,
+    ].map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+
+    static func make(from prompt: String) -> String? {
+        var text = prompt
+        for pattern in noise {
+            text = pattern.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ")
+        }
+        guard let line = text.split(whereSeparator: \.isNewline)
+            .map({ $0.trimmingCharacters(in: .whitespaces) })
+            .first(where: { !$0.isEmpty })
+        else { return fallback(prompt) }
+        var sentence = firstSentence(line)
+        var stripped = true
+        while stripped {
+            stripped = false
+            for pattern in leadIns {
+                let range = NSRange(sentence.startIndex..., in: sentence)
+                if let match = pattern.firstMatch(in: sentence, range: range), let r = Range(match.range, in: sentence) {
+                    sentence.removeSubrange(r)
+                    stripped = true
+                }
+            }
+        }
+        sentence = sentence
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".?!:;,-–— "))
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        guard sentence.count >= 3 else { return fallback(prompt) }
+        return clip(capitalized(sentence))
+    }
+
+    private static func firstSentence(_ line: String) -> String {
+        var end = line.endIndex
+        var index = line.startIndex
+        while index < line.endIndex {
+            let ch = line[index]
+            let next = line.index(after: index)
+            if ch == "." || ch == "?" || ch == "!" || ch == ":" || ch == ";" {
+                if next == line.endIndex || line[next].isWhitespace {
+                    end = index
+                    break
+                }
+            }
+            index = next
+        }
+        return String(line[..<end])
+    }
+
+    private static func capitalized(_ text: String) -> String {
+        guard let first = text.first, first.isLowercase else { return text }
+        return first.uppercased() + text.dropFirst()
+    }
+
+    private static func clip(_ text: String) -> String {
+        if text.count <= maxLength { return text }
+        let head = String(text.prefix(maxLength))
+        if let space = head.lastIndex(of: " "), head.distance(from: head.startIndex, to: space) > maxLength / 2 {
+            return String(head[..<space]).trimmingCharacters(in: CharacterSet(charactersIn: ".?!:;,-–— ")) + "…"
+        }
+        return String(text.prefix(maxLength - 1)) + "…"
+    }
+
+    private static func fallback(_ prompt: String) -> String? {
+        let line = prompt.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first(where: { !$0.isEmpty })
+        guard let line, !line.isEmpty else { return nil }
+        return clip(capitalized(line))
     }
 }
