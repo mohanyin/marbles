@@ -12,6 +12,7 @@ if [[ ! -d "$APP" ]]; then
 fi
 
 echo "Installing $APP → $DEST"
+pkill -x Marbles 2>/dev/null || true
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
 # Unsigned builds need a right-click Open anyway the first time (Gatekeeper).
