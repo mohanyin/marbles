@@ -44,6 +44,7 @@
 		A10000000000000000000025 /* DemoMarble.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002E /* DemoMarble.swift */; };
 		A10000000000000000000026 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002F /* LoginItem.swift */; };
 		A1000000000000000000002B /* CompletionSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000035 /* CompletionSound.swift */; };
+		A1000000000000000000002C /* PreferencesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000036 /* PreferencesWindow.swift */; };
 		A10000000000000000000028 /* TranscriptPeek.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* TranscriptPeek.swift */; };
 		A10000000000000000000029 /* AppLaunching.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* AppLaunching.swift */; };
 		A1000000000000000000002A /* JumpRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* JumpRouter.swift */; };
@@ -88,6 +89,7 @@
 		A2000000000000000000002E /* DemoMarble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoMarble.swift; sourceTree = "<group>"; };
 		A2000000000000000000002F /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		A20000000000000000000035 /* CompletionSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionSound.swift; sourceTree = "<group>"; };
+		A20000000000000000000036 /* PreferencesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindow.swift; sourceTree = "<group>"; };
 		A20000000000000000000032 /* TranscriptPeek.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptPeek.swift; sourceTree = "<group>"; };
 		A20000000000000000000033 /* AppLaunching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunching.swift; sourceTree = "<group>"; };
 		A20000000000000000000034 /* JumpRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpRouter.swift; sourceTree = "<group>"; };
@@ -150,6 +152,7 @@
 				A20000000000000000000003 /* PreferencesView.swift */,
 				A2000000000000000000002F /* LoginItem.swift */,
 				A20000000000000000000035 /* CompletionSound.swift */,
+				A20000000000000000000036 /* PreferencesWindow.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -411,6 +414,7 @@
 				A10000000000000000000025 /* DemoMarble.swift in Sources */,
 				A10000000000000000000026 /* LoginItem.swift in Sources */,
 				A1000000000000000000002B /* CompletionSound.swift in Sources */,
+				A1000000000000000000002C /* PreferencesWindow.swift in Sources */,
 				A10000000000000000000028 /* TranscriptPeek.swift in Sources */,
 				A10000000000000000000029 /* AppLaunching.swift in Sources */,
 				A1000000000000000000002A /* JumpRouter.swift in Sources */,
