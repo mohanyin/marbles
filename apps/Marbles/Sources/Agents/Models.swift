@@ -61,6 +61,9 @@ struct Agent: Identifiable, Equatable {
     var isDemo: Bool
     var animationTime: Float
     var bloomStartedAt: Date?
+    /// When the agent last entered `.finished`, so the indicator row can blink
+    /// on arrival and then settle. Nil for agents restored without one.
+    var finishedAt: Date?
     var errorHueStartedAt: Date?
     var errorHueReleasedAt: Date?
 
@@ -108,6 +111,7 @@ struct Agent: Identifiable, Equatable {
             isDemo: isDemo,
             animationTime: 0,
             bloomStartedAt: nil,
+            finishedAt: nil,
             errorHueStartedAt: nil,
             errorHueReleasedAt: nil
         )

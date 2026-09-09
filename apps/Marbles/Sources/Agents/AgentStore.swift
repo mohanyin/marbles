@@ -113,6 +113,7 @@ final class AgentStore {
                 if isErrorEnd(event.sessionEndReason) || agent.status == .error {
                     agent.status = .error
                 } else if agent.status != .error {
+                    if agent.status != .finished { agent.finishedAt = Date() }
                     agent.status = .finished
                 }
                 agent.lastEventAt = Date()
@@ -486,8 +487,12 @@ final class AgentStore {
         if previous == .error {
             agent.errorHueReleasedAt = Date()
         }
-        if next == .finished, previous != .error || forceBloom {
-            agent.bloomStartedAt = Date()
+        if next == .finished {
+            // Only on arrival, so a repeated .finished does not restart the blink.
+            if previous != .finished { agent.finishedAt = Date() }
+            if previous != .error || forceBloom {
+                agent.bloomStartedAt = Date()
+            }
         }
     }
 

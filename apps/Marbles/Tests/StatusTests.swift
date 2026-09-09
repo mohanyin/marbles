@@ -4,6 +4,7 @@ enum StatusTests {
     @MainActor
     static func run() {
         sessionLifecycle()
+        finishBlinksThenHolds()
         toolFailureIsNotError()
         stopFailureIsError()
         completionFiresOncePerTurn()
@@ -257,6 +258,44 @@ enum StatusTests {
         TestRun.expectEqual(
             store.agents[0].lastAssistantPreview,
             "Not out of the box — NSVisualEffectView applies one uniform blur strength across its whole bounds."
+        )
+    }
+
+    /// Green pulses three times on arrival, then holds. Guards the timing as
+    /// well as the settle: a blink that never ends would read as a stuck agent.
+    @MainActor
+    private static func finishBlinksThenHolds() {
+        var agent = Agent.make(id: "blink", source: .demo, status: .finished)
+        let t0 = Date()
+        agent.finishedAt = t0
+
+        let green: [LightColor] = [.green, .green, .green]
+        let off: [LightColor] = [.off, .off, .off]
+        let half = Indicators.finishBlinkPeriod / 2
+
+        func at(_ offset: TimeInterval) -> [LightColor] {
+            Indicators.lights(for: agent, now: t0.addingTimeInterval(offset), reducedMotion: false)
+        }
+
+        // Starts lit, so the row reads as on the instant the agent finishes.
+        TestRun.expectEqual(at(0), green, "blink starts lit")
+        for pulse in 0..<Indicators.finishBlinks {
+            let base = Double(pulse) * Indicators.finishBlinkPeriod
+            TestRun.expectEqual(at(base + half * 0.5), green, "pulse \(pulse) on")
+            TestRun.expectEqual(at(base + half * 1.5), off, "pulse \(pulse) off")
+        }
+        let total = Double(Indicators.finishBlinks) * Indicators.finishBlinkPeriod
+        TestRun.expectEqual(at(total + 0.01), green, "settles to steady green")
+        TestRun.expectEqual(at(total + 60), green, "still steady a minute later")
+
+        // Reduced motion, and agents restored without a timestamp, skip straight
+        // to steady rather than blinking or going dark.
+        TestRun.expectEqual(
+            Indicators.lights(for: agent, now: t0, reducedMotion: true), green, "reduced motion is steady"
+        )
+        agent.finishedAt = nil
+        TestRun.expectEqual(
+            Indicators.lights(for: agent, now: t0, reducedMotion: false), green, "no timestamp is steady"
         )
     }
 

@@ -39,6 +39,9 @@ enum Indicators {
     static let waveStep: TimeInterval = 0.64
     static let flashOn: TimeInterval = 0.28
     static let flashPeriod: TimeInterval = 0.72
+    /// Green blinks on arrival at `.finished`, then holds steady.
+    static let finishBlinkPeriod: TimeInterval = 0.26
+    static let finishBlinks = 3
 
     static var rowLength: CGFloat { endLightLength * 2 + lightLength + lightGap * 2 }
 
@@ -52,7 +55,7 @@ enum Indicators {
         case .waitingOnUser:
             return [.white, .white, .white]
         case .finished:
-            return [.green, .green, .green]
+            return finishBlink(agent: agent, now: now, reducedMotion: reducedMotion)
         case .error:
             return [.red, .red, .red]
         case .idle:
@@ -118,6 +121,17 @@ enum Indicators {
             mask[(start + offset) % 3] = true
         }
         return mask
+    }
+
+    /// Three green pulses on arrival, then solid green. Starts lit, so the row
+    /// reads as on the instant the agent finishes rather than a beat later.
+    private static func finishBlink(agent: Agent, now: Date, reducedMotion: Bool) -> [LightColor] {
+        let solid: [LightColor] = [.green, .green, .green]
+        guard !reducedMotion, let finishedAt = agent.finishedAt else { return solid }
+        let elapsed = now.timeIntervalSince(finishedAt)
+        guard elapsed >= 0, elapsed < Double(finishBlinks) * finishBlinkPeriod else { return solid }
+        let phase = elapsed.truncatingRemainder(dividingBy: finishBlinkPeriod)
+        return phase < finishBlinkPeriod / 2 ? solid : [.off, .off, .off]
     }
 
     private static func thinkingWave(now: Date, reducedMotion: Bool) -> [LightColor] {
