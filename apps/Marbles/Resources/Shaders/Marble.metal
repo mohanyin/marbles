@@ -22,7 +22,7 @@ struct Instance {
     float angle;
     float4 colorBack;
     float4 colorInner;
-    float4 colors[5];
+    float4 colors[6];
 };
 
 struct FrameConstants {
@@ -112,7 +112,7 @@ fragment float4 marble_fragment(
 
     float smokeMask = 0.0;
     int count = int(m.colorCount + 0.5);
-    for (int i = 1; i < 6; i++) {
+    for (int i = 1; i < 7; i++) {
         if (i > count) break;
         float mixAmount = sst(0.0, 1.0, clamp(mixer - float(i - 1), 0.0, 1.0));
         if (i == 1) smokeMask = mixAmount;
@@ -152,7 +152,10 @@ fragment float4 marble_fragment(
         float shade = mix(kShadeAmbient, 1.0, lambert * lambert);
         float rim = pow(1.0 - height, kRimPower) * kRimStrength * lambert;
         // rgb only; alpha is left alone so the premultiplied edge stays intact.
-        color = color * shade + rim;
+        // The rim is scaled by opacity because it *adds* light: on a marble with
+        // transparent regions an unscaled rim pushes premultiplied colour above
+        // its own alpha, which clips to white wherever the marble is see-through.
+        color = color * shade + rim * opacity;
     }
 
     color *= imgAlpha;

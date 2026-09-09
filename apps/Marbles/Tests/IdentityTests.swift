@@ -25,16 +25,20 @@ enum IdentityTests {
                 p.colors.count >= Identity.minColors && p.colors.count <= Identity.maxColors,
                 "color count \(p.colors.count) seed \(seed)"
             )
-            TestRun.expectEqual(p.colorBack.w, 1, "colorBack is opaque")
+            // The backdrop is deliberately clear, so a transparent smoke stop
+            // reads as a hole through the marble rather than a patch of
+            // backdrop colour.
+            TestRun.expectEqual(p.colorBack.w, 0, "colorBack is clear")
             TestRun.expect(p.innerDistortion >= 0.1 && p.innerDistortion <= 0.8, "distortion \(p.innerDistortion)")
             TestRun.expect(p.size >= 0.7 && p.size <= 1, "size \(p.size)")
             TestRun.expect(p.angle >= 0 && p.angle <= 360, "angle \(p.angle)")
             for color in p.colors {
-                TestRun.expectEqual(color.w, 1, "smoke color alpha")
+                TestRun.expect(color.w == 1 || color.w == Identity.fadedAlpha, "smoke alpha is 1 or faded, got \(color.w)")
                 TestRun.expect(color.x >= 0 && color.x <= 1, "r \(color.x)")
                 TestRun.expect(color.y >= 0 && color.y <= 1, "g \(color.y)")
                 TestRun.expect(color.z >= 0 && color.z <= 1, "b \(color.z)")
             }
+            TestRun.expectEqual(p.colors.filter { $0.w < 1 }.count, 1, "exactly one faded stop, seed \(seed)")
         }
     }
 
@@ -43,9 +47,9 @@ enum IdentityTests {
         for index in 0..<80 {
             seen.insert(Identity.params(seed: Identity.sheetSeed(at: index)).colors.count)
         }
-        TestRun.expect(seen.contains(3), "sheet seeds include 3 colors")
         TestRun.expect(seen.contains(4), "sheet seeds include 4 colors")
         TestRun.expect(seen.contains(5), "sheet seeds include 5 colors")
+        TestRun.expect(seen.contains(6), "sheet seeds include 6 colors")
         for count in Identity.minColors...Identity.maxColors {
             TestRun.expectEqual(Identity.seeds(colorCount: count, count: 8).count, 8, "\(count) color seeds")
         }
@@ -62,12 +66,15 @@ enum IdentityTests {
     private static func paletteWalkProducesDistinctStops() {
         for index in 0..<40 {
             let p = Identity.params(seed: Identity.sheetSeed(at: index))
+            // Compare rgb only: one stop is deliberately clear, and an alpha
+            // difference would mask a stalled walk behind a large distance.
+            func rgb(_ c: SIMD4<Float>) -> SIMD3<Float> { SIMD3<Float>(c.x, c.y, c.z) }
             for i in 1..<p.colors.count {
-                let d = simd_distance(p.colors[i - 1], p.colors[i])
+                let d = simd_distance(rgb(p.colors[i - 1]), rgb(p.colors[i]))
                 TestRun.expect(d > 0.001, "stop \(i) moved, seed index \(index)")
             }
             TestRun.expect(
-                simd_distance(p.colors[p.colors.count - 1], p.colorBack) > 0.001,
+                simd_distance(rgb(p.colors[p.colors.count - 1]), rgb(p.colorBack)) > 0.001,
                 "colorBack differs from last stop, seed index \(index)"
             )
         }

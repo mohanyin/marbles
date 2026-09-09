@@ -34,32 +34,46 @@ struct MarbleParams: Equatable {
 /// and the GPU encodes on write. Stops are therefore decoded to linear on the
 /// way out, in `linearColor`.
 enum Identity {
-    static let minColors = 3
-    static let maxColors = 5
+    /// Raised from 3...5 once one stop per marble started being cleared: with
+    /// more stops the cleared one is a smaller share of the ramp, and a higher
+    /// `colorCount` also pushes `mixer` past 1 further out from the centre,
+    /// which widens `smokeMask` and puts coverage back on the disc.
+    static let minColors = 4
+    static let maxColors = 6
 
-    /// Chaotic, bounded, and non-divergent across this whole interval — the
-    /// reason Thomas is usable with a randomized parameter where most
-    /// attractors need a stability search per seed.
-    private static let dissipationRange: ClosedRange<Double> = 0.10...0.20
-    /// The attractor's extent depends on its dissipation: |max| runs from about
-    /// 6.0 at b = 0.10 down to 3.9 at b = 0.20, fitting 1.9 / sqrt(b) to within
-    /// ~10%. A single hardcoded scale mis-sized a range that varies 2.4x, so low
-    /// dissipation marbles spent stretches pinned against the clamp with their
-    /// colour flat. `clampUnit` stays as a guard for the fit's error margin.
+    /// Bounded and non-divergent across this whole interval — the reason Thomas
+    /// is usable with a randomized parameter where most attractors need a
+    /// stability search per seed. (It is not chaotic throughout: the largest
+    /// Lyapunov exponent sits at zero for much of the range, so many marbles
+    /// ride limit cycles rather than strange attractors. They are still bounded
+    /// and still look right.)
+    private static let dissipationRange: ClosedRange<Double> = 0.05...0.14
+    /// The attractor's extent depends on its dissipation, and steeply: |max|
+    /// runs from about 12.1 at b = 0.05 to 3.9 at b = 0.20, a factor of three.
+    /// Undersizing this pins stops against `clampUnit` and flattens their
+    /// colour, so the exponent is fitted over the whole dissipation range and
+    /// the coefficient is then raised until the curve is an *envelope* — never
+    /// below the true extent anywhere. That trades a little reach (the walk uses
+    /// 69-100% of the spread box rather than all of it) for no clipping at all:
+    /// measured 0.0% of stops pinned, against 5.2% for the earlier 1.9/sqrt(b),
+    /// which was fitted only over 0.10...0.20 and undershoots badly below that.
     private static func attractorScale(dissipation: Double) -> Double {
-        1.9 / dissipation.squareRoot()
+        1.05 * pow(dissipation, -0.848)
     }
     /// Arc length in gamma-encoded sRGB between consecutive stops. Drawn per
     /// marble: low values give a tonal marble, high values a wide-arc one, and
     /// that contrast is itself an identity cue. Scaled to hold the mean
     /// perceptual step at about deltaE 0.09, matching what the Oklab walk took.
-    private static let stepRange: ClosedRange<Double> = 0.117...0.292
+    private static let stepRange: ClosedRange<Double> = 0.2...0.4
     /// Mid-cube. Stops ride outward from here along the attractor.
     private static let rgbCenter: Double = 0.5
     /// How far a marble ranges from `rgbCenter` in each channel. This is the
     /// nearest thing to a saturation control the space offers, and it moves
     /// lightness at the same time.
     private static let rgbSpread: ClosedRange<Double> = 0.30...0.50
+    /// One stop per marble is dropped to this alpha. It keeps its colour, so the
+    /// band still tints what shows through instead of cutting a clean hole.
+    static let fadedAlpha: Float = 0.3
 
     private static let integrationStep: Double = 0.01
     private static let warmupSteps = 1_500
@@ -110,6 +124,8 @@ enum Identity {
         )
         let spread = rng.value(in: rgbSpread)
         let step = rng.value(in: stepRange)
+        let spin = rng.unit() * 2 * .pi
+        let fadedIndex = min(Int(rng.unit() * Double(count)), count - 1)
         let innerDistortion = 0.1 + rng.unit() * 0.7
         let size = 0.7 + rng.unit() * 0.3
         let angle = rng.unit() * 360
@@ -120,12 +136,29 @@ enum Identity {
 
         let scale = attractorScale(dissipation: dissipation)
 
-        /// The attractor's three coordinates, straight onto the three channels.
+        let spinCos = cos(spin)
+        // Rodrigues about the unit grey axis, with the 1/sqrt(3) folded in.
+        let spinK = sin(spin) / 3.0.squareRoot()
+
+        /// The attractor's three coordinates onto the three channels, after a
+        /// per-marble turn about the grey axis (1,1,1). That axis is the one
+        /// rotation which leaves the grey component of a colour alone and moves
+        /// only its hue. Thomas is cyclically symmetric — already invariant
+        /// under the 120-degree case of exactly this rotation — so a continuous
+        /// angle only generalises a symmetry the attractor already has, which is
+        /// also why it decorrelates hue from the trajectory's shape rather than
+        /// distorting it.
         func channels(_ p: Vec3) -> Vec3 {
-            Vec3(
-                x: rgbCenter + spread * clampUnit(p.x / scale),
-                y: rgbCenter + spread * clampUnit(p.y / scale),
-                z: rgbCenter + spread * clampUnit(p.z / scale)
+            let common = (p.x + p.y + p.z) * (1 - spinCos) / 3
+            let q = Vec3(
+                x: p.x * spinCos + (p.y - p.z) * spinK + common,
+                y: p.y * spinCos + (p.z - p.x) * spinK + common,
+                z: p.z * spinCos + (p.x - p.y) * spinK + common
+            )
+            return Vec3(
+                x: rgbCenter + spread * clampUnit(q.x / scale),
+                y: rgbCenter + spread * clampUnit(q.y / scale),
+                z: rgbCenter + spread * clampUnit(q.z / scale)
             )
         }
 
@@ -147,10 +180,15 @@ enum Identity {
             stops.append(channels(point))
         }
 
-        let colors = stops.prefix(count).map { linearColor($0, alpha: 1) }
+        // Exactly one smoke stop is faded rather than cut. It keeps its rgb, so
+        // with the backdrop clear the band reads as tinted glass over whatever
+        // is behind the marble rather than as a hole punched through it.
+        let colors = stops.prefix(count).enumerated().map { index, stop in
+            linearColor(stop, alpha: index == fadedIndex ? fadedAlpha : 1)
+        }
         return MarbleParams(
             colors: Array(colors),
-            colorBack: linearColor(stops[count], alpha: 1),
+            colorBack: linearColor(stops[count], alpha: 0),
             colorInner: linearColor(stops[count + 1], alpha: 0),
             innerDistortion: Float(innerDistortion),
             size: Float(size),

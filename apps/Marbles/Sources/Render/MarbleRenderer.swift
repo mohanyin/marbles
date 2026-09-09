@@ -18,6 +18,7 @@ struct MarbleGPUInstance {
     var color2: SIMD4<Float>
     var color3: SIMD4<Float>
     var color4: SIMD4<Float>
+    var color5: SIMD4<Float>
 }
 
 struct MarbleFrameConstants {
@@ -55,7 +56,7 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
         self.device = device
         self.queue = queue
         super.init()
-        precondition(MemoryLayout<MarbleGPUInstance>.stride == 144)
+        precondition(MemoryLayout<MarbleGPUInstance>.stride == 160)
         pipeline = Self.makePipeline(device: device)
         isReady = pipeline != nil
     }
@@ -297,7 +298,7 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
     ) -> MarbleGPUInstance {
         let params = Identity.params(seed: agent.seed)
         let uniforms = MotionEngine.uniforms(for: agent, now: now, reducedMotion: reducedMotion, dim: dim)
-        var packed = [SIMD4<Float>](repeating: params.colors.last ?? SIMD4<Float>(1, 1, 1, 1), count: 5)
+        var packed = [SIMD4<Float>](repeating: params.colors.last ?? SIMD4<Float>(1, 1, 1, 1), count: 6)
         for (index, color) in params.colors.prefix(5).enumerated() {
             packed[index] = color
         }
@@ -315,7 +316,8 @@ final class MarbleRenderer: NSObject, MTKViewDelegate {
             color1: packed[1],
             color2: packed[2],
             color3: packed[3],
-            color4: packed[4]
+            color4: packed[4],
+            color5: packed[5]
         )
     }
 
