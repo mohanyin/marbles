@@ -16,6 +16,10 @@ enum FocusPreviewTests {
         latestAssistantSkipsThinking()
         latestUserTakesMostRecent()
         promptReadsLastUserTurn()
+        titleUnwrapsConductorPrompt()
+        skillBodyIsNotATitle()
+        latestUserSkipsSkillBodies()
+        latestUserUnwrapsAttachmentNotice()
         expandsTildeInTranscriptPath()
     }
 
@@ -91,6 +95,37 @@ enum FocusPreviewTests {
         let capped = FocusPreview.prompt(for: agent) ?? ""
         TestRun.expectEqual(capped.count, FocusPreview.maxCharacters, "prompt truncates at the cap")
         TestRun.expect(capped.hasSuffix("…"), "truncated prompt ends with an ellipsis")
+    }
+
+    /// Conductor sends every prompt inside a `<system_instruction>` block, with the person's text
+    /// after the closing tag. Real record shape from a Conductor session.
+    private static let conductorPrompt = #"{"type":"user","promptSource":"sdk","message":{"role":"user","content":"<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\n</system_instruction>\n\ncan you pull the latest, package, and reinstall this repo"}}"#
+
+    /// A `/skill` invocation appends the skill file as a `user` record flagged `isMeta`.
+    private static let skillInjection = #"{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /Users/me/.claude/skills/pr\n\n# Pull Request Creator\n\nFollow these steps."}]}}"#
+
+    private static func titleUnwrapsConductorPrompt() {
+        let snap = TranscriptPeek.inspect(data: Data(conductorPrompt.utf8))
+        TestRun.expectEqual(snap.title, "Pull the latest, package, and reinstall this repo", "title comes from the text after the wrapper")
+        TestRun.expectEqual(snap.titleSource, .prompt)
+    }
+
+    private static func skillBodyIsNotATitle() {
+        let snap = TranscriptPeek.inspect(data: Data(skillInjection.utf8))
+        TestRun.expect(snap.title == nil, "a skill body never becomes the title, got \(snap.title ?? "nil")")
+    }
+
+    private static func latestUserSkipsSkillBodies() {
+        let jsonl = [
+            #"{"type":"user","message":{"role":"user","content":"fix the bug"}}"#,
+            skillInjection,
+        ].joined(separator: "\n")
+        TestRun.expectEqual(TranscriptPeek.latestUserText(data: Data(jsonl.utf8)), "fix the bug", "skill injection is not the person's latest message")
+    }
+
+    private static func latestUserUnwrapsAttachmentNotice() {
+        let jsonl = #"{"type":"user","message":{"role":"user","content":"\n<system_instruction>\nThe user has attached these files. Read them before proceeding.\n- .context/attachments/XtmgYk/pasted_text.txt (6.7 KB)\n</system_instruction>\n\n\n\nwhy is this happening"}}"#
+        TestRun.expectEqual(TranscriptPeek.latestUserText(data: Data(jsonl.utf8)), "why is this happening", "attachment notice is stripped from the prompt")
     }
 
     private static func aiTitleBeatsFirstPrompt() {

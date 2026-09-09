@@ -188,31 +188,19 @@ struct TranscriptParser {
         let role = (message?["role"] as? String) ?? type
 
         if role == "user" {
-            return consumeUser(message: message, fallback: obj)
+            return consumeUser(obj)
         }
         return consumeAssistant(message: message)
     }
 
-    private mutating func consumeUser(message: [String: Any]?, fallback: [String: Any]) -> Bool {
-        let content = message?["content"] ?? fallback["content"]
-
-        if let text = content as? String {
-            guard let human = Self.humanText(text) else { return false }
-            startTurn(prompt: human)
-            return true
-        }
-
-        guard let blocks = content as? [[String: Any]] else { return false }
-
+    private mutating func consumeUser(_ obj: [String: Any]) -> Bool {
         // A user entry is either a real human turn or a batch of tool results, never both.
-        let texts = blocks
-            .filter { $0["type"] as? String == "text" }
-            .compactMap { $0["text"] as? String }
-        if !texts.isEmpty, let human = Self.humanText(texts.joined(separator: "\n")) {
-            startTurn(prompt: human)
+        if let human = HumanText.fromRecord(obj) {
+            startTurn(prompt: Self.capped(human))
             return true
         }
-
+        let content = (obj["message"] as? [String: Any])?["content"] ?? obj["content"]
+        guard let blocks = content as? [[String: Any]] else { return false }
         var changed = false
         for block in blocks where block["type"] as? String == "tool_result" {
             guard let id = block["tool_use_id"] as? String else { continue }
@@ -304,13 +292,9 @@ struct TranscriptParser {
 
     // MARK: - Helpers
 
-    /// A human turn is plain text the person typed. Tool results carry no `text` block, and
-    /// `<…>`-wrapped scaffolding (command output, system reminders) is not a human message.
-    static func humanText(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("<") else { return nil }
-        if trimmed.count <= IngestConstants.previewLimit { return trimmed }
-        return String(trimmed.prefix(IngestConstants.previewLimit - 1)) + "…"
+    private static func capped(_ text: String) -> String {
+        if text.count <= IngestConstants.previewLimit { return text }
+        return String(text.prefix(IngestConstants.previewLimit - 1)) + "…"
     }
 
     /// True when a raw jsonl line opens a new human turn. Used by the backward scan.
@@ -319,13 +303,6 @@ struct TranscriptParser {
               obj["isSidechain"] as? Bool != true,
               obj["type"] as? String == "user"
         else { return false }
-        let message = obj["message"] as? [String: Any]
-        let content = message?["content"] ?? obj["content"]
-        if let text = content as? String { return humanText(text) != nil }
-        guard let blocks = content as? [[String: Any]] else { return false }
-        let texts = blocks
-            .filter { $0["type"] as? String == "text" }
-            .compactMap { $0["text"] as? String }
-        return !texts.isEmpty && humanText(texts.joined(separator: "\n")) != nil
+        return HumanText.fromRecord(obj) != nil
     }
 }

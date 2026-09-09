@@ -9,11 +9,14 @@ enum TranscriptTests {
         newHumanTurnResetsTheStream()
         toolResultsDoNotOpenATurn()
         skipsScaffoldingAndSidechains()
+        unwrapsHostScaffoldingAroundThePrompt()
+        skillInjectionDoesNotOpenATurn()
         collapsesThinking()
         groupsToolRuns()
         handlesSplitWrites()
         enforcesEntryCap()
         readerFindsTurnBoundary()
+        readerBoundaryIgnoresSkillInjection()
         readerAppendsIncrementally()
         readerRestartsOnTruncation()
         expansionFollowsDefaultThenClicks()
@@ -152,6 +155,25 @@ enum TranscriptTests {
         TestRun.expectEqual(turn.entries.count, 1, "only the real assistant text survives")
     }
 
+    /// Conductor wraps each prompt in `<system_instruction>…</system_instruction>` and puts the
+    /// person's text after it.
+    private static let conductorPrompt = #"{"type":"user","message":{"role":"user","content":"<system_instruction>\nYou are working inside Conductor.\n</system_instruction>\n\ncan you pull the latest"}}"#
+
+    /// A `/skill` invocation appends the skill file as a `user` record flagged `isMeta`.
+    private static let skillInjection = #"{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /Users/me/.claude/skills/pr\n\n# Pull Request Creator"}]}}"#
+
+    private static func unwrapsHostScaffoldingAroundThePrompt() {
+        let turn = parse([conductorPrompt, prose("On it.")])
+        TestRun.expectEqual(turn.prompt, "can you pull the latest", "prompt is the text after the wrapper")
+        TestRun.expectEqual(turn.entries.count, 1, "reply attaches to the unwrapped turn")
+    }
+
+    private static func skillInjectionDoesNotOpenATurn() {
+        let turn = parse([human("q"), skillInjection, prose("answer")])
+        TestRun.expectEqual(turn.prompt, "q", "skill body does not replace the prompt")
+        TestRun.expectEqual(turn.entries.count, 1, "skill body is not an entry either")
+    }
+
     private static func collapsesThinking() {
         let think = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"","signature":"abc"}]}}"#
         let turn = parse([human("q"), think, think, think, prose("answer")])
@@ -273,6 +295,27 @@ enum TranscriptTests {
         }
         TestRun.expectEqual(reader.turn.prompt, "current question", "found the newest boundary")
         TestRun.expectEqual(reader.turn.entries.count, 1, "earlier turn not parsed")
+    }
+
+    /// The backward scan for the turn boundary must not stop at a skill injection, or the turn
+    /// would start there and lose the person's prompt.
+    private static func readerBoundaryIgnoresSkillInjection() {
+        let path = tempFile([
+            human("old question"),
+            prose("old answer"),
+            conductorPrompt,
+            toolUse("t1", "Bash", #"{"command":"ls"}"#),
+            skillInjection,
+            prose("current answer"),
+        ].joined(separator: "\n") + "\n")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        guard let reader = TranscriptReader.load(path: path) else {
+            TestRun.expect(false, "reader loaded")
+            return
+        }
+        TestRun.expectEqual(reader.turn.prompt, "can you pull the latest", "boundary is the wrapped prompt, not the skill body")
+        TestRun.expectEqual(reader.turn.entries.count, 2, "tool row plus prose")
     }
 
     private static func readerAppendsIncrementally() {

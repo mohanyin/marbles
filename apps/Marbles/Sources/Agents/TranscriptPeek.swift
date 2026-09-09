@@ -63,7 +63,7 @@ enum TranscriptPeek {
                 if let value = string(obj["agentName"]) { offer(value, from: .agentName) }
             case "user":
                 hasUser = true
-                if snapshot.titleSource == .none, let value = userText(obj),
+                if snapshot.titleSource == .none, let value = HumanText.fromRecord(obj),
                    let summary = TitleSummary.make(from: value) {
                     offer(summary, from: .prompt)
                 }
@@ -106,7 +106,7 @@ enum TranscriptPeek {
         tailData(path: path).flatMap(latestAssistantText(data:))
     }
 
-    /// Latest human turn. Tool results and `<…>`-wrapped scaffolding are skipped by `userText`.
+    /// Latest human turn; `HumanText` decides what counts as one.
     static func latestUserText(path: String?) -> String? {
         tailData(path: path).flatMap(latestUserText(data:))
     }
@@ -122,7 +122,7 @@ enum TranscriptPeek {
             let role = (obj["message"] as? [String: Any])?["role"] as? String
             if obj["isSidechain"] as? Bool == true { return }
             guard type == "user" || role == "user" else { return }
-            if let value = userText(obj) {
+            if let value = HumanText.fromRecord(obj) {
                 latest = cap(value)
             }
         }
@@ -205,23 +205,6 @@ enum TranscriptPeek {
             }
         }
         return nil
-    }
-
-    private static func userText(_ obj: [String: Any]) -> String? {
-        let message = obj["message"] as? [String: Any]
-        let raw: String?
-        if let text = string(message?["content"]) {
-            raw = text
-        } else if let blocks = message?["content"] as? [[String: Any]] {
-            raw = blocks.compactMap { string($0["text"]) }.joined(separator: " ")
-        } else {
-            raw = string(obj["content"])
-        }
-        guard let raw else { return nil }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return nil }
-        if trimmed.hasPrefix("<") { return nil }
-        return trimmed
     }
 
     private static func assistantText(_ obj: [String: Any]) -> String? {
@@ -347,5 +330,42 @@ enum TitleSummary {
             .first(where: { !$0.isEmpty })
         guard let line, !line.isEmpty else { return nil }
         return clip(capitalized(line))
+    }
+}
+
+/// The text a person typed in a `user` record, once the host's wrapping is removed.
+///
+/// Conductor wraps every prompt in `<system_instruction>…</system_instruction>`; Claude Code
+/// appends `<system-reminder>` blocks and echoes slash commands as `<command-…>` blocks. Skill
+/// bodies, compaction summaries, and pasted images are stored as `user` records too, flagged
+/// `isMeta`.
+enum HumanText {
+    /// A leading `<tag …>…</tag>` block and the whitespace after it.
+    private static let wrapper = try! NSRegularExpression(
+        pattern: #"^\s*<([A-Za-z][\w-]*)(?:\s[^>]*)?>[\s\S]*?</\1>\s*"#
+    )
+
+    static func fromRecord(_ obj: [String: Any]) -> String? {
+        if obj["isMeta"] as? Bool == true { return nil }
+        let content = (obj["message"] as? [String: Any])?["content"] ?? obj["content"]
+        if let text = content as? String { return strip(text) }
+        guard let blocks = content as? [[String: Any]] else { return nil }
+        let texts = blocks
+            .filter { $0["type"] as? String == "text" }
+            .compactMap { ($0["text"] as? String).flatMap(strip) }
+        return texts.isEmpty ? nil : texts.joined(separator: "\n")
+    }
+
+    /// Nil when nothing but wrapping remains. Text that still opens with `<` after the known
+    /// wrappers are gone is scaffolding of a shape not seen yet, and is dropped the same way.
+    static func strip(_ raw: String) -> String? {
+        var text = raw
+        while let match = wrapper.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text) {
+            text.removeSubrange(range)
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("<") else { return nil }
+        return trimmed
     }
 }
