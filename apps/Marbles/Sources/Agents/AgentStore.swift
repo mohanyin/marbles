@@ -376,6 +376,34 @@ final class AgentStore {
         }
     }
 
+    /// Adds marbles for sessions that are already running but have not sent a hook yet, so a
+    /// restart does not leave the dock empty until each session happens to do something
+    /// (ARCHITECTURE §11.5). A hooked agent always wins: discovery only fills gaps, and a real
+    /// event for the same session later takes over the entry by session id.
+    func adoptDiscovered(_ candidates: [SessionDiscovery.Candidate]) {
+        for candidate in candidates where !agents.contains(where: { $0.id == candidate.sessionID }) {
+            let snapshot = TranscriptPeek.inspect(path: candidate.transcriptPath)
+            // No conversation means nothing worth showing — a session that only just opened.
+            guard snapshot.hasConversation else { continue }
+            removeDemo()
+            var agent = Agent.make(
+                id: candidate.sessionID,
+                source: .discovery,
+                cwd: candidate.cwd.map { URL(fileURLWithPath: $0) },
+                conductorWorkspaceID: conductorID(from: candidate.cwd),
+                title: snapshot.title,
+                transcriptPath: candidate.transcriptPath,
+                lastEventAt: candidate.modifiedAt,
+                seed: seeds.seed(for: candidate.sessionID)
+            )
+            agent.pid = candidate.pid
+            agents.append(agent)
+            refreshFromTranscript(candidate.sessionID)
+        }
+        enforceCap()
+        notify()
+    }
+
     private func peek(_ event: HookEvent) -> TranscriptSnapshot {
         let path = TranscriptPeek.resolvedPath(
             sessionID: event.sessionID,

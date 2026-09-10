@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.ingest = ingest
 
         syncHooksOnLaunch(prefs: prefs)
-        offerDemoIfNeeded(store: store, prefs: prefs)
+        discoverRunningSessions(store: store, prefs: prefs)
 
         if !prefs.values.overlayHidden {
             overlay.show()
@@ -93,8 +93,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Rebuilds the dock from sessions that are already running. The store is memory-only, so
+    /// without this a restart shows nothing until each session next fires a hook — which for a
+    /// session idling at a prompt can be hours. Scanning walks the transcript directory and the
+    /// process table, so it runs off the main thread; the demo decision waits for the result so a
+    /// machine with live sessions never gets a demo marble.
+    private func discoverRunningSessions(store: AgentStore, prefs: PrefsStore) {
+        Task.detached(priority: .utility) {
+            let found = SessionDiscovery.scan()
+            await MainActor.run {
+                store.adoptDiscovered(found)
+                self.offerDemoIfNeeded(store: store, prefs: prefs)
+            }
+        }
+    }
+
     private func offerDemoIfNeeded(store: AgentStore, prefs: PrefsStore) {
-        let recent = SessionDiscovery.hasRecentClaudeActivity()
+        // A discovered session is activity in its own right, and a stronger signal than an mtime.
+        let recent = !store.agents.isEmpty || SessionDiscovery.hasRecentClaudeActivity()
         if DemoMarble.shouldOffer(demoOffered: prefs.values.demoOffered, recentActivity: recent) {
             store.ensureDemo()
         }

@@ -166,6 +166,27 @@ enum TranscriptPeek {
         return latest
     }
 
+    /// The `cwd` a transcript records for itself. Discovery matches this against a live process's
+    /// working directory; the encoded folder name cannot be decoded back because it maps both
+    /// slashes and dots onto dashes.
+    static func recordedCWD(path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let text = String(data: handle.readData(ofLength: 64 * 1024), encoding: .utf8) else {
+            return nil
+        }
+        var found: String?
+        text.enumerateLines { line, stop in
+            guard line.contains("\"cwd\""),
+                  let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let cwd = obj["cwd"] as? String, !cwd.isEmpty
+            else { return }
+            found = cwd
+            stop = true
+        }
+        return found
+    }
+
     static func resolvedPath(sessionID: String, cwd: String?, explicit: String?) -> String? {
         var candidates: [String] = []
         if let explicit, !explicit.isEmpty {

@@ -41,7 +41,7 @@ struct TerminalContext: Equatable {
         }?.pid
     }
 
-    private static func looksLikeVersion(_ name: String) -> Bool {
+    static func looksLikeVersion(_ name: String) -> Bool {
         let parts = name.split(separator: ".")
         return parts.count >= 2 && parts.allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
     }
