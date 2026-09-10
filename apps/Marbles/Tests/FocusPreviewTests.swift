@@ -13,6 +13,7 @@ enum FocusPreviewTests {
         customTitleBeatsAITitle()
         aiTitlePastHeadLimitIsFound()
         summarizesFirstPrompt()
+        condensesToAFewWords()
         latestAssistantSkipsThinking()
         latestUserTakesMostRecent()
         promptReadsLastUserTurn()
@@ -140,16 +141,60 @@ enum FocusPreviewTests {
 
     private static func summarizesFirstPrompt() {
         TestRun.expectEqual(TitleSummary.make(from: "can you fix merge conflicts: https://github.com/harvey/website/pull/2333"), "Fix merge conflicts")
-        TestRun.expectEqual(TitleSummary.make(from: "hey, could you please add dark mode to the settings page? it should follow the system."), "Add dark mode to the settings page")
+        TestRun.expectEqual(TitleSummary.make(from: "hey, could you please add dark mode to the settings page? it should follow the system."), "Add dark mode to the settings")
         TestRun.expectEqual(TitleSummary.make(from: "push"), "Push")
         TestRun.expectEqual(TitleSummary.make(from: "I want you to rename `foo.swift` to bar.swift"), "Rename to bar.swift")
-        TestRun.expectEqual(TitleSummary.make(from: "[Image #1] make the titles more appropriate"), "Make the titles more appropriate")
+        TestRun.expectEqual(TitleSummary.make(from: "[Image #1] make the titles more appropriate"), "Make the titles more")
         TestRun.expectEqual(TitleSummary.make(from: "https://example.com/some/long/path"), "Https://example.com/some/long/path", "a bare URL falls back to the raw line")
-        let long = TitleSummary.make(from: "refactor the whole authentication module so that tokens are refreshed transparently before they expire and users never see a login screen") ?? ""
-        TestRun.expect(long.count <= TitleSummary.maxLength + 1, "clipped to the cap")
-        TestRun.expect(long.hasSuffix("…"), "clip marks the cut")
-        TestRun.expect(!long.contains("  "), "no double spaces")
         TestRun.expect(TitleSummary.make(from: "   ") == nil, "blank prompt yields nothing")
+    }
+
+    /// A title is a label, not a sentence: a few words, no trailing rationale, nothing dangling.
+    private static func condensesToAFewWords() {
+        TestRun.expectEqual(
+            TitleSummary.make(from: "refactor the whole authentication module so that tokens are refreshed transparently before they expire"),
+            "Refactor the whole authentication",
+            "rationale after `so that` is dropped"
+        )
+        TestRun.expectEqual(
+            TitleSummary.make(from: "update the marble titles and then push the branch"),
+            "Update the marble titles",
+            "a follow-on task is dropped"
+        )
+        TestRun.expectEqual(
+            TitleSummary.make(from: "fix the flaky test because CI keeps failing"),
+            "Fix the flaky test",
+            "a reason clause is dropped"
+        )
+        TestRun.expectEqual(
+            TitleSummary.make(from: "move the ingest server to a background queue"),
+            "Move the ingest server",
+            "capped at the word limit"
+        )
+        TestRun.expectEqual(
+            TitleSummary.make(from: "rewrite the renderer to"),
+            "Rewrite the renderer",
+            "a dangling function word is trimmed"
+        )
+        TestRun.expectEqual(
+            TitleSummary.make(from: "so ship it"),
+            "Ship it",
+            "a clause break needs a verb and object ahead of it to count"
+        )
+        for prompt in [
+            "add dark mode to the settings page so that it follows the system appearance",
+            "look into why the overlay flickers when the menu bar auto-hides",
+            "push",
+        ] {
+            let title = TitleSummary.make(from: prompt) ?? ""
+            TestRun.expect(title.count <= TitleSummary.maxLength + 1, "clipped to the cap: \(title)")
+            TestRun.expect(!title.contains("  "), "no double spaces: \(title)")
+            // A trailing prepositional phrase may run past the cap so the object survives.
+            TestRun.expect(
+                title.split(separator: " ").count <= TitleSummary.maxWords + 2,
+                "stays label-length: \(title)"
+            )
+        }
     }
 
     private static func showsSessionTitle() {

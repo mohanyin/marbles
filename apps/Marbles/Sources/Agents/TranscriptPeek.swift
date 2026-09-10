@@ -263,8 +263,15 @@ enum TranscriptPeek {
 
 /// Squeezes a card title out of the first prompt for sessions that have no generated title yet
 /// (the first seconds of a Claude Code session, or Cursor, which never writes one).
+///
+/// The result is a label, not a sentence: "Fix merge conflicts", not "fix the merge conflicts on
+/// the PR so that CI goes green". A prompt states a task at whatever length it takes; a card has
+/// room for a few words. `condense` keeps the opening verb and its object and drops the rest.
 enum TitleSummary {
     static let maxLength = 60
+    /// Words kept after condensing. Four fits the card at `FocusCardMetrics.titleFont` without
+    /// truncating, and is long enough for "Add dark mode to settings".
+    static let maxWords = 4
 
     private static let noise: [NSRegularExpression] = [
         #"https?://\S+"#,
@@ -276,9 +283,14 @@ enum TitleSummary {
     /// Conversational lead-ins that carry no information about the task.
     private static let leadIns: [NSRegularExpression] = [
         #"^(hey|hi|hello|yo|ok|okay|so|also|now|please|pls|plz|thanks)[,!.\s]+"#,
-        #"^(can|could|would|will|do)\s+(you|u)\s+(please\s+|pls\s+)?"#,
+        #"^(can|could|would|will|do)\s+(you|u|we|i)\s+(please\s+|pls\s+)?"#,
+        #"^(should|shall)\s+(you|we|i)\s+"#,
         #"^(please|pls|plz)\s+"#,
         #"^(help me|i want you to|i need you to|i'd like you to|i would like you to|i want to|i need to|i'd like to|let's|lets)\s+"#,
+        // "go ahead and fix X", "try to fix X" — the real verb is the one after.
+        #"^(go ahead and|try to|attempt to|make sure to|see if you can)\s+"#,
+        // "why is X broken" / "how come X fails" — the question word is not the subject.
+        #"^(why|how come|what's up with|whats up with|any idea why|do you know why)\s+"#,
     ].map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 
     static func make(from prompt: String) -> String? {
@@ -307,8 +319,73 @@ enum TitleSummary {
             .trimmingCharacters(in: CharacterSet(charactersIn: ".?!:;,-–— "))
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         guard sentence.count >= 3 else { return fallback(prompt) }
-        return clip(capitalized(sentence))
+        return clip(capitalized(condense(sentence)))
     }
+
+    /// Cuts a task statement down to its head phrase.
+    ///
+    /// Two passes. First a clause break — "so that", "because", "and then" and friends introduce
+    /// rationale or a second task, and everything from there on is detail the card does not need.
+    /// Then a word cap, which also drops a dangling function word so the label does not end on
+    /// "to" or "the".
+    private static func condense(_ sentence: String) -> String {
+        var words = clauseHead(sentence).split(separator: " ").map(String.init)
+        words = Array(words.prefix(cut(words)))
+        while let last = words.last, words.count > 1, danglers.contains(last.lowercased()) {
+            words.removeLast()
+        }
+        return words.joined(separator: " ")
+    }
+
+    /// How many words to keep. `maxWords` is the target, but a cut landing inside a phrase reads
+    /// worse than a slightly longer label: "Add a preference" loses the point that
+    /// "Add a preference to disable sound" makes. So the cap slides to the nearest phrase
+    /// boundary — the start of a trailing prepositional phrase, or the end of one just past it.
+    private static func cut(_ words: [String]) -> Int {
+        guard words.count > maxWords else { return words.count }
+        // A preposition inside the budget starts a phrase; keeping it means keeping its object,
+        // which is allowed to run one word past the cap.
+        for index in stride(from: maxWords - 1, through: 2, by: -1)
+        where prepositions.contains(words[index].lowercased()) {
+            return min(words.count, index + 3) > maxWords + 2 ? index : min(words.count, index + 3)
+        }
+        // Otherwise take one more word when the cap splits a noun phrase off its head noun.
+        if words.count > maxWords, danglers.contains(words[maxWords - 1].lowercased()) {
+            return maxWords + 1
+        }
+        return maxWords
+    }
+
+    /// Prepositions that open a trailing phrase worth keeping whole.
+    private static let prepositions: Set<String> = ["to", "for", "in", "on", "into", "from", "with", "of"]
+
+
+    /// Everything before the first clause break, when one leaves at least a verb and an object.
+    private static func clauseHead(_ sentence: String) -> String {
+        let lower = sentence.lowercased()
+        var cut = sentence.endIndex
+        for marker in clauseBreaks {
+            guard let found = lower.range(of: " \(marker) ") else { continue }
+            let head = sentence[..<found.lowerBound]
+            guard head.split(separator: " ").count >= 2, found.lowerBound < cut else { continue }
+            cut = found.lowerBound
+        }
+        return String(sentence[..<cut])
+    }
+
+    /// Clause openers that mark the start of rationale, conditions, or a follow-on task.
+    private static let clauseBreaks = [
+        "so that", "so", "because", "since", "such that", "in order to",
+        "and then", "then", "and also", "also", "but", "while", "which", "that should",
+        "if", "when", "where", "as well as", "plus",
+    ]
+
+    /// Function words that read as unfinished at the end of a label. Pronouns are absent on
+    /// purpose: in "Ship it" or "Fix that" they are the object, and trimming them strands the verb.
+    private static let danglers: Set<String> = [
+        "to", "the", "a", "an", "of", "for", "in", "on", "at", "with", "from", "into",
+        "and", "or", "by", "as", "my", "our", "its",
+    ]
 
     private static func firstSentence(_ line: String) -> String {
         var end = line.endIndex
