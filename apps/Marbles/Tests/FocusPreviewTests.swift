@@ -16,6 +16,7 @@ enum FocusPreviewTests {
         condensesToAFewWords()
         prettifiesSlugTitles()
         readsConductorWorkspaceTitle()
+        cleansBranchNameTitles()
         latestAssistantSkipsThinking()
         latestUserTakesMostRecent()
         promptReadsLastUserTurn()
@@ -309,5 +310,40 @@ enum FocusPreviewTests {
             ) == nil,
             "an unknown workspace has no title"
         )
+    }
+
+    /// A title that is really a branch name loses the owner prefix and tracker id, keeping the
+    /// part that says what the work is — but numbers that carry meaning stay put.
+    private static func cleansBranchNameTitles() {
+        TestRun.expectEqual(
+            TitleSummary.deBranch("Mikaela/asana-1213582599582137-blog-highlighting-social-share Easter egg"),
+            "Blog highlighting social share Easter egg",
+            "owner prefix and asana id are dropped"
+        )
+        TestRun.expectEqual(
+            TitleSummary.deBranch("mikaela/fix-faq-title"),
+            "Fix faq title",
+            "a plain owner-prefixed branch is cleaned"
+        )
+        TestRun.expectEqual(
+            TitleSummary.deBranch("1213582599582137-blog-highlighting"),
+            "Blog highlighting",
+            "a leading bare id is dropped"
+        )
+        for untouched in [
+            "PR #2341 blog and customer stories dates",
+            "website pull request 2333",
+            "Website pull request 2333 merge conflicts",
+            "Marble titles brevity",
+            "install.sh",
+            "Create linear ticket in WEB",
+            "a/b/c-deep-path",
+        ] {
+            TestRun.expectEqual(
+                TitleSummary.deBranch(untouched),
+                untouched,
+                "left verbatim: \(untouched)"
+            )
+        }
     }
 }

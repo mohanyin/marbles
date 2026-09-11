@@ -458,6 +458,53 @@ enum TitleSummary {
     /// a filename (`install.sh`) is left alone, as is anything containing whitespace, a path
     /// separator, or uppercase — a real title like `Mikaela/asana-…-social-share Easter egg`
     /// must survive untouched.
+    /// Cleans up a title that is really a git branch name.
+    ///
+    /// Claude Code sometimes titles a session after the branch it is working on, which puts an
+    /// owner prefix and a tracker id in front of the only informative part:
+    ///
+    ///     Mikaela/asana-1213582599582137-blog-highlighting-social-share Easter egg
+    ///     → Blog highlighting social share Easter egg
+    ///
+    /// Only the recognisable furniture is removed — an `owner/` prefix, a `tracker-<digits>`
+    /// pair, and a long bare id. A short number is left alone, because "PR #2341" and
+    /// "website pull request 2333" are titles where the number is the point.
+    static func deBranch(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A branch name has no spaces, but a title built from one may have a suffix after it.
+        guard let head = trimmed.split(separator: " ").first.map(String.init),
+              head.contains("/") || head.contains("-")
+        else { return title }
+        let suffix = trimmed.dropFirst(head.count)
+
+        // Drop a single `owner/` prefix; anything deeper is a path, not a branch.
+        var stem = head
+        let parts = stem.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count <= 2 else { return title }
+        if parts.count == 2 {
+            guard !parts[0].isEmpty, !parts[1].isEmpty else { return title }
+            stem = String(parts[1])
+        }
+
+        var words = stem.split(whereSeparator: { $0 == "-" || $0 == "_" }).map(String.init)
+        guard words.count >= 2 else { return title }
+        // Strip a `tracker-<long digits>` pair, or a long bare id, from the front.
+        if words.count >= 3, isLongID(words[1]), words[0].allSatisfy(\.isLetter) {
+            words.removeFirst(2)
+        } else if isLongID(words[0]) {
+            words.removeFirst()
+        }
+        guard words.count >= 2 else { return title }
+        let rebuilt = capitalized(words.joined(separator: " ")) + suffix
+        // Only worth it if something actually came off.
+        return rebuilt.count < trimmed.count ? rebuilt : title
+    }
+
+    /// A run of digits long enough to be a ticket id rather than a meaningful number.
+    private static func isLongID(_ word: String) -> Bool {
+        word.count >= 5 && word.allSatisfy(\.isNumber)
+    }
+
     static func prettifySlug(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= maxLength else { return title }
