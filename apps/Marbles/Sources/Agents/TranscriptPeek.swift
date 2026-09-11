@@ -446,4 +446,54 @@ enum TitleSummary {
         guard let line, !line.isEmpty else { return nil }
         return clip(capitalized(line))
     }
+
+    /// Renders a slug-shaped title as prose: `cleanup-stale-drafts-scheduled` reads as
+    /// "Cleanup stale drafts scheduled".
+    ///
+    /// Claude Code normally writes a prose `ai-title`, but a session that takes on a named task
+    /// gets re-badged with that task's identifier, which is a slug. Only the display is changed —
+    /// the transcript keeps whatever it recorded, and jump-in still matches on the raw value.
+    ///
+    /// Deliberately conservative, because several things that look slug-adjacent are not slugs:
+    /// a filename (`install.sh`) is left alone, as is anything containing whitespace, a path
+    /// separator, or uppercase — a real title like `Mikaela/asana-…-social-share Easter egg`
+    /// must survive untouched.
+    static func prettifySlug(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxLength else { return title }
+        // Prose, paths and filenames are not slugs. A dot rules out `install.sh` and `v2.1.3`.
+        guard !trimmed.contains(where: { $0.isWhitespace }),
+              !trimmed.contains("/"), !trimmed.contains("\\"), !trimmed.contains(".")
+        else { return title }
+        // Uppercase means someone already chose the casing (`WEB-285`, `Asana-Sync`).
+        guard trimmed == trimmed.lowercased() else { return title }
+        let separators: Set<Character> = ["-", "_"]
+        guard trimmed.contains(where: { separators.contains($0) }) else { return title }
+        let words = trimmed.split(whereSeparator: { separators.contains($0) }).map(String.init)
+        // A single word plus stray dashes ("--fix") is not a slug worth rewriting.
+        guard words.count >= 2, words.allSatisfy({ !$0.isEmpty }) else { return title }
+        return capitalized(issueKeyed(words).joined(separator: " "))
+    }
+
+    /// Rejoins a leading issue key that the separator split apart, so `web-407-…` keeps the
+    /// `WEB-407` an issue tracker would show rather than becoming "Web 407".
+    private static func issueKeyed(_ words: [String]) -> [String] {
+        guard words.count >= 2,
+              knownTrackers.contains(words[0]),
+              words[1].allSatisfy(\.isNumber)
+        else { return words.map(ticketCased) }
+        return [words[0].uppercased() + "-" + words[1]] + words.dropFirst(2)
+    }
+
+    /// Keeps issue keys readable: the `web` in `web-407-customer-story-date` is a tracker prefix,
+    /// not a word, so it is upper-cased rather than title-cased.
+    private static func ticketCased(_ word: String) -> String {
+        word.count <= 3 && word.allSatisfy(\.isLetter) && knownTrackers.contains(word)
+            ? word.uppercased()
+            : word
+    }
+
+    /// Issue-tracker prefixes seen in these titles. Kept explicit so ordinary short words
+    /// ("add", "fix", "the") are never shouted.
+    private static let knownTrackers: Set<String> = ["web", "eng", "ops", "inf", "sec", "ds", "ml"]
 }

@@ -14,6 +14,7 @@ enum FocusPreviewTests {
         aiTitlePastHeadLimitIsFound()
         summarizesFirstPrompt()
         condensesToAFewWords()
+        prettifiesSlugTitles()
         latestAssistantSkipsThinking()
         latestUserTakesMostRecent()
         promptReadsLastUserTurn()
@@ -223,5 +224,43 @@ enum FocusPreviewTests {
             explicit: "~/.claude/projects/fake/no-such-session.jsonl"
         )
         TestRun.expectEqual(path, "\(home)/.claude/projects/fake/no-such-session.jsonl")
+    }
+
+    /// A session re-badged with a task identifier shows prose, but anything that only resembles
+    /// a slug is left exactly as it is.
+    private static func prettifiesSlugTitles() {
+        TestRun.expectEqual(
+            TitleSummary.prettifySlug("cleanup-stale-drafts-scheduled"),
+            "Cleanup stale drafts scheduled",
+            "a dashed task name reads as prose"
+        )
+        TestRun.expectEqual(
+            TitleSummary.prettifySlug("test_real_content_jsonld"),
+            "Test real content jsonld",
+            "underscores separate too"
+        )
+        TestRun.expectEqual(
+            TitleSummary.prettifySlug("web-407-customer-story-date"),
+            "WEB-407 customer story date",
+            "a tracker prefix keeps its issue-key shape"
+        )
+        for untouched in [
+            "install.sh",
+            "release-2.1.265",
+            "my-script.sh",
+            "Marble titles brevity",
+            "WEB-285",
+            "Mikaela/asana-1213582599582137-blog-highlighting-social-share Easter egg",
+            "Asana sync",
+            "v2.1.265",
+            "--fix",
+            "",
+        ] {
+            TestRun.expectEqual(
+                TitleSummary.prettifySlug(untouched),
+                untouched,
+                "left verbatim: \(untouched)"
+            )
+        }
     }
 }
