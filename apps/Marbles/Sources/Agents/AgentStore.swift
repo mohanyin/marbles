@@ -376,6 +376,42 @@ final class AgentStore {
         }
     }
 
+    /// Adds marbles for sessions that are already running but have not sent a hook yet, so a
+    /// restart does not leave the dock empty until each session happens to do something
+    /// (ARCHITECTURE §11.5). A hooked agent always wins: discovery only fills gaps, and a real
+    /// event for the same session later takes over the entry by session id.
+    func adoptDiscovered(_ candidates: [SessionDiscovery.Candidate]) {
+        for candidate in candidates where !agents.contains(where: { $0.id == candidate.sessionID }) {
+            let snapshot = TranscriptPeek.inspect(path: candidate.transcriptPath)
+            // No conversation means nothing worth showing — a session that only just opened.
+            guard snapshot.hasConversation else { continue }
+            removeDemo()
+            // Jump-in needs the terminal markers a hook event would have carried. They are all
+            // environment variables of the agent process, so rebuild the context from its PID —
+            // otherwise the marble falls back to opening a brand new terminal.
+            let environment = ProcessTree.environment(of: candidate.pid)
+            let terminal = environment.isEmpty
+                ? nil
+                : TerminalContext.capture(environment: environment, pid: candidate.pid)
+            var agent = Agent.make(
+                id: candidate.sessionID,
+                source: ConductorWorkspace.isConductor(cwd: candidate.cwd) ? .conductor : .discovery,
+                cwd: candidate.cwd.map { URL(fileURLWithPath: $0) },
+                conductorWorkspaceID: conductorID(from: candidate.cwd),
+                title: snapshot.title ?? ConductorWorkspace.title(forCWD: candidate.cwd),
+                transcriptPath: candidate.transcriptPath,
+                lastEventAt: candidate.modifiedAt,
+                seed: seeds.seed(for: candidate.sessionID)
+            )
+            agent.pid = candidate.pid
+            agent.terminal = terminal
+            agents.append(agent)
+            refreshFromTranscript(candidate.sessionID)
+        }
+        enforceCap()
+        notify()
+    }
+
     private func peek(_ event: HookEvent) -> TranscriptSnapshot {
         let path = TranscriptPeek.resolvedPath(
             sessionID: event.sessionID,
@@ -395,6 +431,14 @@ final class AgentStore {
         let snapshot = TranscriptPeek.inspect(path: path)
         if let title = snapshot.title {
             agents[index].title = title
+        }
+        // A Conductor session is driven by injected instructions, so Claude Code writes no
+        // ai-title and the first prompt is scaffolding — but Conductor names it. Its title beats
+        // anything squeezed out of the transcript, and fills the gap when there is nothing at all.
+        if snapshot.titleSource <= .prompt,
+           let workspaceTitle = ConductorWorkspace.title(forCWD: agents[index].cwd?.path)
+        {
+            agents[index].title = workspaceTitle
         }
         if let path {
             if var reader = readers[id] {

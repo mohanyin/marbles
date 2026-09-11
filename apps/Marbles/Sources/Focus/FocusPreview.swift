@@ -6,7 +6,8 @@ enum FocusPreview {
     static func title(for agent: Agent) -> String? {
         if agent.isDemo { return "Demo." }
         let value = agent.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (value?.isEmpty == false) ? value : nil
+        guard let value, !value.isEmpty else { return nil }
+        return TitleSummary.prettifySlug(TitleSummary.deBranch(value))
     }
 
     static func line(for agent: Agent) -> String {

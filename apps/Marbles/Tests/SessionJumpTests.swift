@@ -12,6 +12,8 @@ enum SessionJumpTests {
         plansTmux()
         plansFallbacks()
         capturesOwnAncestry()
+        capturesAnotherProcess()
+        discoveredSessionsKeepTheirPane()
         roundTripsJSON()
     }
 
@@ -175,5 +177,58 @@ enum SessionJumpTests {
         TestRun.expectEqual(context.agentPID, 6855, "native binary named by version")
         context.ancestors[0].name = "login"
         TestRun.expectEqual(context.agentPID, nil)
+    }
+
+    /// Discovery has only a pid, so the terminal context is rebuilt from that process's
+    /// environment rather than the hook payload. Reading the *caller's* ancestry instead would
+    /// describe Marbles' own terminal, so the pid has to be honoured.
+    private static func capturesAnotherProcess() {
+        let own = TerminalContext.capture(environment: [:])
+        let launchd = TerminalContext.capture(environment: [:], pid: 1)
+        TestRun.expect(
+            own.ancestors.map(\.pid) != launchd.ancestors.map(\.pid),
+            "capture(pid:) reads the named process, not the caller"
+        )
+        let env = TerminalContext.capture(environment: ["TMUX_PANE": "%7", "TERM_PROGRAM": "tmux"], pid: 1)
+        TestRun.expectEqual(env.tmuxPane, "%7", "markers come from the supplied environment")
+        TestRun.expect(env.isInsideTmux == false, "TMUX_PANE alone is not a tmux session")
+
+        // The path discovery actually takes: read a real process's environment by pid. Our own
+        // pid is the one process guaranteed to be running, and it always has some environment.
+        let live = ProcessTree.environment(of: ProcessInfo.processInfo.processIdentifier)
+        TestRun.expect(!live.isEmpty, "a live process's environment is readable by pid")
+        TestRun.expect(live["PATH"] != nil, "and carries real variables, not just keys")
+    }
+
+    /// The regression that made every discovered marble open a new window: with a terminal
+    /// context the plan must hop to the real pane, and a Conductor session must activate
+    /// Conductor rather than fall through to the terminal fallback.
+    private static func discoveredSessionsKeepTheirPane() {
+        let inTmux = TerminalContext.capture(
+            environment: ["TMUX": "/private/tmp/tmux-501/default,123,0", "TMUX_PANE": "%36"],
+            pid: 1
+        )
+        let discovered = SessionJump.plan(
+            for: agent(source: .discovery, terminal: inTmux),
+            titleHint: nil,
+            host: nil
+        )
+        TestRun.expectEqual(discovered.tmux?.pane, "%36", "the discovered session's pane is carried")
+        TestRun.expectEqual(
+            discovered.target,
+            .tmuxClient(socket: "/private/tmp/tmux-501/default", pane: "%36"),
+            "a discovered tmux session attaches its pane instead of opening a terminal"
+        )
+
+        let conductor = SessionJump.plan(
+            for: agent(source: .conductor, cwd: "/Users/mikaela/conductor/workspaces/website/yangon", terminal: nil),
+            titleHint: nil,
+            host: nil
+        )
+        TestRun.expectEqual(
+            conductor.target,
+            .activateBundle(HostBundle.conductor),
+            "a Conductor session activates Conductor, not a terminal"
+        )
     }
 }

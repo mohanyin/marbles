@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Engineer path: build (if needed), copy to /Applications, launch.
+# Engineer path: build, copy to /Applications, launch.
 # First launch installs hooks and may show a demo marble.
 set -euo pipefail
 
@@ -7,7 +7,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/dist/Marbles.app"
 DEST="/Applications/Marbles.app"
 
-if [[ ! -d "$APP" ]]; then
+# Always rebuild. This used to skip the build whenever dist/Marbles.app existed, which meant an
+# edit-then-install cycle silently installed the *previous* build and still said "Launched" —
+# you would go looking for a bug in code that was never in the binary. package.sh wipes dist/
+# and rebuilds from scratch anyway, so there is no build to reuse and nothing to be saved by
+# guessing. Pass --no-build to install a dist/ you deliberately built yourself.
+if [[ "${1:-}" == "--no-build" ]]; then
+  [[ -d "$APP" ]] || { echo "No build at $APP; run scripts/package.sh first." >&2; exit 1; }
+  echo "Skipping build; installing the existing $APP"
+else
   "$ROOT/scripts/package.sh"
 fi
 

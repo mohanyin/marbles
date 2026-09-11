@@ -20,30 +20,3 @@ enum DemoMarble {
         )
     }
 }
-
-enum SessionDiscovery {
-    static func hasRecentClaudeActivity(
-        now: Date = Date(),
-        window: TimeInterval = DemoMarble.discoveryWindow,
-        projects: URL? = nil
-    ) -> Bool {
-        let root = projects ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects")
-        guard let enumerator = FileManager.default.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return false
-        }
-        let cutoff = now.addingTimeInterval(-window)
-        for case let url as URL in enumerator {
-            guard url.pathExtension == "jsonl" else { continue }
-            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            if let date, date >= cutoff {
-                return true
-            }
-        }
-        return false
-    }
-}
