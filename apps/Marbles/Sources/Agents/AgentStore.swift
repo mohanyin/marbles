@@ -386,9 +386,16 @@ final class AgentStore {
             // No conversation means nothing worth showing — a session that only just opened.
             guard snapshot.hasConversation else { continue }
             removeDemo()
+            // Jump-in needs the terminal markers a hook event would have carried. They are all
+            // environment variables of the agent process, so rebuild the context from its PID —
+            // otherwise the marble falls back to opening a brand new terminal.
+            let environment = ProcessTree.environment(of: candidate.pid)
+            let terminal = environment.isEmpty
+                ? nil
+                : TerminalContext.capture(environment: environment, pid: candidate.pid)
             var agent = Agent.make(
                 id: candidate.sessionID,
-                source: .discovery,
+                source: ConductorWorkspace.isConductor(cwd: candidate.cwd) ? .conductor : .discovery,
                 cwd: candidate.cwd.map { URL(fileURLWithPath: $0) },
                 conductorWorkspaceID: conductorID(from: candidate.cwd),
                 title: snapshot.title ?? ConductorWorkspace.title(forCWD: candidate.cwd),
@@ -397,6 +404,7 @@ final class AgentStore {
                 seed: seeds.seed(for: candidate.sessionID)
             )
             agent.pid = candidate.pid
+            agent.terminal = terminal
             agents.append(agent)
             refreshFromTranscript(candidate.sessionID)
         }

@@ -142,11 +142,18 @@ struct TerminalContext: Equatable {
 
     // MARK: Capture
 
-    /// Read the calling process's own ancestry and environment. Cheap: a handful of sysctls.
-    static func capture(environment: [String: String] = ProcessInfo.processInfo.environment) -> TerminalContext {
+    /// Read a process's ancestry and environment. Cheap: a handful of sysctls.
+    ///
+    /// `pid` defaults to the caller, which is what the hook helper wants. Discovery passes the
+    /// agent's pid instead, so the ancestry and tty describe that session's terminal rather than
+    /// whichever process happened to ask.
+    static func capture(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        pid: Int32 = getpid()
+    ) -> TerminalContext {
         var context = TerminalContext()
-        context.ancestors = ProcessTree.ancestors(of: getpid())
-        context.tty = ProcessTree.tty(of: getpid())
+        context.ancestors = ProcessTree.ancestors(of: pid)
+        context.tty = ProcessTree.tty(of: pid)
             ?? context.ancestors.lazy.compactMap { ProcessTree.tty(of: $0.pid) }.first
         if let top = context.ancestors.last {
             context.terminalPID = top.pid
@@ -216,5 +223,56 @@ enum ProcessTree {
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
         return String(cString: buffer)
+    }
+}
+
+extension ProcessTree {
+    /// Another process's environment, read from its argument area via `KERN_PROCARGS2`.
+    ///
+    /// Discovery finds a session by its PID, with none of the hook payload a live event carries,
+    /// so the terminal context has to be reconstructed — and every marker jump-in needs
+    /// (`KITTY_WINDOW_ID`, `TMUX_PANE`, `TERM_PROGRAM`…) is an environment variable of the agent
+    /// process. Reading it turns a discovered marble into one that can focus its real pane.
+    ///
+    /// The block holds argc, then the exec path, then argv, then the environment — all NUL
+    /// separated — so argv has to be stepped over before the `KEY=VALUE` pairs begin.
+    static func environment(of pid: Int32) -> [String: String] {
+        var size = 0
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [:] }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctl(&mib, UInt32(mib.count), &buffer, &size, nil, 0) == 0 else { return [:] }
+        guard size > MemoryLayout<Int32>.size else { return [:] }
+
+        var argc: Int32 = 0
+        withUnsafeMutableBytes(of: &argc) { destination in
+            buffer.withUnsafeBytes { source in
+                destination.copyBytes(from: UnsafeRawBufferPointer(rebasing: source[0..<4]))
+            }
+        }
+
+        // Strings start after argc, beginning with the exec path.
+        var index = MemoryLayout<Int32>.size
+        func nextString() -> String? {
+            guard index < size else { return nil }
+            let start = index
+            while index < size, buffer[index] != 0 { index += 1 }
+            guard index <= size else { return nil }
+            let bytes = buffer[start..<index].map { UInt8(bitPattern: $0) }
+            while index < size, buffer[index] == 0 { index += 1 }
+            return String(decoding: bytes, as: UTF8.self)
+        }
+
+        _ = nextString() // exec path
+        for _ in 0..<max(0, Int(argc)) { _ = nextString() }
+
+        var environment: [String: String] = [:]
+        while let entry = nextString(), !entry.isEmpty {
+            guard let split = entry.firstIndex(of: "=") else { continue }
+            let key = String(entry[..<split])
+            let value = String(entry[entry.index(after: split)...])
+            if !key.isEmpty { environment[key] = value }
+        }
+        return environment
     }
 }
