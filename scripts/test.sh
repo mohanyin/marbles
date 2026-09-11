@@ -24,6 +24,7 @@ xcrun swiftc -parse-as-library -O -sdk "$SDK" -target "$TARGET" \
   "$SRC/Agents/TranscriptPeek.swift" \
   "$SRC/Agents/SeedStore.swift" \
   "$SRC/Agents/SessionDiscovery.swift" \
+  "$SRC/Agents/ConductorWorkspace.swift" \
   "$SRC/Agents/TranscriptWatcher.swift" \
   "$SRC/Agents/AgentStore.swift" \
   "$SRC/Ingest/IngestAuth.swift" \

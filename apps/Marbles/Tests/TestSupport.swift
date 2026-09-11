@@ -61,3 +61,26 @@ func dockLayout(
 func agents(count: Int) -> [Agent] {
     (0..<count).map { Agent.debugDummy(index: $0) }
 }
+
+enum TestSupport {
+    /// Builds a fixture database by piping SQL through the system `sqlite3`, so the test does not
+    /// need write bindings of its own.
+    static func runSQLite(database: URL, sql: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [database.path]
+        let pipe = Pipe()
+        process.standardInput = pipe
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        pipe.fileHandleForWriting.write(Data(sql.utf8))
+        try? pipe.fileHandleForWriting.close()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+}

@@ -15,6 +15,7 @@ enum FocusPreviewTests {
         summarizesFirstPrompt()
         condensesToAFewWords()
         prettifiesSlugTitles()
+        readsConductorWorkspaceTitle()
         latestAssistantSkipsThinking()
         latestUserTakesMostRecent()
         promptReadsLastUserTurn()
@@ -262,5 +263,51 @@ enum FocusPreviewTests {
                 "left verbatim: \(untouched)"
             )
         }
+    }
+
+    /// Conductor names its own sessions; Marbles reads that name rather than inventing one.
+    private static func readsConductorWorkspaceTitle() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("marbles-conductor-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let db = dir.appendingPathComponent("conductor.db")
+        let workspace = "/Users/someone/conductor/workspaces/site/yangon"
+        let sql = """
+        CREATE TABLE workspaces (id TEXT, active_session_id TEXT, workspace_path TEXT);
+        CREATE TABLE sessions (id TEXT, title TEXT);
+        INSERT INTO workspaces VALUES ('w1','s1','\(workspace)');
+        INSERT INTO sessions VALUES ('s1','Daily Brief');
+        INSERT INTO workspaces VALUES ('w2','s2','/Users/someone/conductor/workspaces/site/lima');
+        INSERT INTO sessions VALUES ('s2','Untitled');
+        INSERT INTO workspaces VALUES ('w3','s3','/Users/someone/Repositories/site');
+        INSERT INTO sessions VALUES ('s3','Should Never Show');
+        """
+        guard TestSupport.runSQLite(database: db, sql: sql) else {
+            TestRun.expect(false, "could not build the fixture database")
+            return
+        }
+        TestRun.expectEqual(
+            ConductorWorkspace.title(forCWD: workspace, database: db),
+            "Daily Brief",
+            "the workspace's session title is used"
+        )
+        TestRun.expect(
+            ConductorWorkspace.title(
+                forCWD: "/Users/someone/conductor/workspaces/site/lima",
+                database: db
+            ) == nil,
+            "Conductor's Untitled placeholder counts as no title"
+        )
+        TestRun.expect(
+            ConductorWorkspace.title(forCWD: "/Users/someone/Repositories/site", database: db) == nil,
+            "a non-Conductor cwd is never looked up, even with a row that would match"
+        )
+        TestRun.expect(
+            ConductorWorkspace.title(
+                forCWD: "/Users/someone/conductor/workspaces/site/unknown",
+                database: db
+            ) == nil,
+            "an unknown workspace has no title"
+        )
     }
 }

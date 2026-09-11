@@ -391,7 +391,7 @@ final class AgentStore {
                 source: .discovery,
                 cwd: candidate.cwd.map { URL(fileURLWithPath: $0) },
                 conductorWorkspaceID: conductorID(from: candidate.cwd),
-                title: snapshot.title,
+                title: snapshot.title ?? ConductorWorkspace.title(forCWD: candidate.cwd),
                 transcriptPath: candidate.transcriptPath,
                 lastEventAt: candidate.modifiedAt,
                 seed: seeds.seed(for: candidate.sessionID)
@@ -423,6 +423,14 @@ final class AgentStore {
         let snapshot = TranscriptPeek.inspect(path: path)
         if let title = snapshot.title {
             agents[index].title = title
+        }
+        // A Conductor session is driven by injected instructions, so Claude Code writes no
+        // ai-title and the first prompt is scaffolding — but Conductor names it. Its title beats
+        // anything squeezed out of the transcript, and fills the gap when there is nothing at all.
+        if snapshot.titleSource <= .prompt,
+           let workspaceTitle = ConductorWorkspace.title(forCWD: agents[index].cwd?.path)
+        {
+            agents[index].title = workspaceTitle
         }
         if let path {
             if var reader = readers[id] {
